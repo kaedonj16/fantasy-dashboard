@@ -369,13 +369,13 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     except Exception:
         _bb_badge = ""
 
-    # Autopilot status chip (mock): owner preview on the pilot ESPN league
-    # only; names the sample mode and links to the Autopilot page. The gate
-    # fails closed, so every other viewer and league renders as before.
+    # Autopilot status chip: usable ESPN leagues under autopilot_access;
+    # names the league's stored mode and links to the Autopilot page. The
+    # gate fails closed, so every other viewer and league renders as before.
     _ap_chip = ""
     try:
-        from dashboard_services.autopilot_preview import autopilot_indicator_mode as _ap_mode_d
-        _apm_d = _ap_mode_d(platform, league_id)
+        from dashboard_services.autopilot_preview import autopilot_surface_mode as _ap_mode_d
+        _apm_d = _ap_mode_d(platform, league_id, season)
         if _apm_d:
             _ap_href_d = url_for(
                 "league_pages.page_autopilot", platform=platform,
@@ -388,8 +388,8 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
                 + html.escape(_ap_href_d, quote=True) + '" '
                 'style="margin-left:8px;vertical-align:middle;text-decoration:none;'
                 'background:rgba(255,255,255,.15);color:#fff;" '
-                'title="Autopilot preview: status only, controls live on the Autopilot page">'
-                f"Autopilot &middot; {html.escape(_apm_d)}</a>"
+                'title="Autopilot status: controls live on the Autopilot page">'
+                f"Autopilot &middot; {html.escape(_apm_d.capitalize())}</a>"
             )
     except Exception:
         _ap_chip = ""

@@ -1985,6 +1985,14 @@ except Exception as e:
     logger.warning("[league-pages-bp] skipped: %s", e)
 
 try:
+    from routes.autopilot_bp import autopilot_bp
+
+    app.register_blueprint(autopilot_bp)
+    logger.info("[autopilot-bp] registered")
+except Exception as e:
+    logger.warning("[autopilot-bp] skipped: %s", e)
+
+try:
     from routes.player_roles_bp import player_roles_bp
 
     app.register_blueprint(player_roles_bp)
@@ -5379,10 +5387,11 @@ def _mobile_nav(active: str, league_id, platform, season) -> str:
             _sl("recap", "Weekly Recap", badge_html=_recap_dot_in),
             _sl("optimal", "Lineup Efficiency"),
         ]
-        # Autopilot page mock: owner preview on the pilot ESPN league only.
+        # Autopilot: usable ESPN leagues under autopilot_access only
+        # (both pilot leagues); every other league shows nothing.
         try:
-            from dashboard_services.autopilot_preview import autopilot_page_visible as _ap_visible_m
-            if _ap_visible_m(platform, league_id):
+            from dashboard_services.autopilot_preview import autopilot_surface_visible as _ap_visible_m
+            if _ap_visible_m(platform, league_id, season):
                 rows.append(_sl("autopilot", "Autopilot", pro=True))
         except Exception:
             pass
@@ -7103,13 +7112,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             # The Lab is a Start/Sit mode, directly under Waivers & Start/Sit.
             _weekly_items.append(
                 ("Lineup Lab", "league_pages.page_waivers", "lineup-lab", False, "?tab=lab"))
-        # Autopilot page mock: in Play, directly after Lineup Lab, whose
-        # lineup it would execute. Owner preview on the pilot ESPN league only; the
-        # gate fails closed, so no other viewer or league sees the item.
+        # Autopilot: in Play, directly after Lineup Lab, whose lineup it
+        # executes. Usable ESPN leagues under autopilot_access only (both
+        # pilot leagues); the gate fails closed, so no other viewer or
+        # league sees the item.
         # (Kaedon, 2026-11-24: no top-level Autopilot pill of its own.)
         try:
-            from dashboard_services.autopilot_preview import autopilot_page_visible as _ap_visible_w
-            if _ap_visible_w(platform, league_id):
+            from dashboard_services.autopilot_preview import autopilot_surface_visible as _ap_visible_w
+            if _ap_visible_w(platform, league_id, season):
                 _weekly_items.append(
                     ("Autopilot <span class='nav-pro-badge'>PRO</span>",
                      "league_pages.page_autopilot", "autopilot", False))
@@ -48058,18 +48068,32 @@ def build_portfolio_body(
             f"{live_skel}</div>"
         )
 
-        # Autopilot status badge (mock): owner preview on the pilot ESPN
-        # league only; the gate fails closed for everyone else.
+        # Autopilot mode control (Kaedon, 2026-11-25: control Autopilot
+        # from My Leagues): usable ESPN leagues under autopilot_access
+        # get the real Off / Approve / Auto segmented control, wired to
+        # the same stored mode as the Autopilot page. Every other league
+        # renders nothing at all; the gate fails closed.
         _ap_badge = ""
         try:
-            from dashboard_services.autopilot_preview import autopilot_indicator_mode as _ap_mode
-            _apm = _ap_mode(plat, lid)
+            from dashboard_services.autopilot_preview import autopilot_surface_mode as _ap_mode
+            _apm = _ap_mode(plat, lid, card_season)
             if _apm:
                 _ap_href = html.escape(
                     f"/{plat}/{card_season}/{lid}/autopilot", quote=True)
+                _ap_btns = "".join(
+                    "<button type='button' data-ap-pf-mode='{m}'{on}>{t}</button>".format(
+                        m=_m, on=" class='ap-on'" if _apm == _m else "",
+                        t=_m.title())
+                    for _m in ("off", "approve", "auto")
+                )
                 _ap_badge = (
-                    f"<div><a class='pf-status-pill pf-status-pill--link' href='{_ap_href}'>"
-                    f"Autopilot &middot; {html.escape(_apm)}</a></div>"
+                    f"<div class='pf-ap' data-ap-control "
+                    f"data-platform='{html.escape(str(plat), quote=True)}' "
+                    f"data-season='{html.escape(str(card_season), quote=True)}' "
+                    f"data-league-id='{html.escape(str(lid), quote=True)}'>"
+                    f"<span class='pf-ap-lab'>Autopilot</span>"
+                    f"<div class='pf-ap-seg' role='tablist' aria-label='Autopilot mode'>{_ap_btns}</div>"
+                    f"<a class='pf-ap-link' href='{_ap_href}'>Open</a></div>"
                 )
         except Exception:
             _ap_badge = ""
@@ -48114,6 +48138,18 @@ def build_portfolio_body(
         "overflow:hidden;box-sizing:border-box;box-shadow:0 1px 3px rgba(18,45,75,.07);}"
         # Dark: step the card off the near-identical page navy with shadow.
         ":root[data-theme='dark'] .pf-lg-card{box-shadow:0 2px 10px rgba(0,0,0,.35);}"
+        # Autopilot card control: label + Off/Approve/Auto segmented
+        # control + page link, in the card grammar. The arming pulse is
+        # the portfolio form of the Autopilot page's Auto animation.
+        ".pf-ap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}"
+        ".pf-ap-lab{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);}"
+        ".pf-ap-seg{position:relative;display:flex;background:var(--row);border:1px solid var(--grid);border-radius:9px;padding:2px;gap:2px;}"
+        ".pf-ap-seg button{border:0;background:transparent;color:var(--text-muted);font:inherit;font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;cursor:pointer;transition:background .2s ease,color .2s ease;}"
+        ".pf-ap-seg button.ap-on{background:var(--accent);color:var(--on-accent);}"
+        ".pf-ap-link{font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;}"
+        "@keyframes pfApArm{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 45%,transparent)}100%{box-shadow:0 0 0 10px transparent}}"
+        ".pf-ap.pf-ap-arming .pf-ap-seg{animation:pfApArm .38s ease-out;}"
+        "@media (prefers-reduced-motion: reduce){.pf-ap.pf-ap-arming .pf-ap-seg{animation:none;}}"
         ".pf-lg-top{display:flex;align-items:flex-start;gap:8px;min-width:0;}"
         ".pf-lg-title{flex:1;min-width:0;display:flex;align-items:baseline;gap:5px;}"
         ".pf-lg-name{font-weight:900;font-size:19px;line-height:1.15;text-decoration:none;color:var(--text);"
@@ -48376,6 +48412,24 @@ def build_portfolio_body(
         "render();})();</script>"
         # One page-scoped owner manages hydration, refresh, polling and cleanup.
         "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
+        # Autopilot card controls: flipping a mode posts to the
+        # autopilot API and re-marks the segment; Auto gets the arming
+        # pulse. Errors leave the stored mode (and the segment) as-is.
+        "<script>(function(){"
+        "document.querySelectorAll('[data-ap-control]').forEach(function(box){"
+        "box.querySelectorAll('[data-ap-pf-mode]').forEach(function(b){"
+        "b.addEventListener('click',function(ev){"
+        "ev.preventDefault();ev.stopPropagation();"
+        "var m=b.getAttribute('data-ap-pf-mode');"
+        "if(b.classList.contains('ap-on'))return;"
+        "if(m==='auto')box.classList.add('pf-ap-arming');"
+        "fetch('/api/autopilot/'+box.getAttribute('data-platform')+'/'+box.getAttribute('data-season')+'/'+box.getAttribute('data-league-id')+'/mode',"
+        "{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})})"
+        ".then(function(r){if(!r.ok)throw new Error('mode save failed');return r.json();})"
+        ".then(function(){box.querySelectorAll('[data-ap-pf-mode]').forEach(function(x){x.classList.toggle('ap-on',x===b);});"
+        "setTimeout(function(){box.classList.remove('pf-ap-arming');},420);})"
+        ".catch(function(){box.classList.remove('pf-ap-arming');});"
+        "});});});})();</script>"
         # Matchup hydration is part of the consolidated card lifecycle above.
     )
 
