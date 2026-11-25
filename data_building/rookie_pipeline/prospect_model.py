@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.8 (see MODEL_VERSION)
+Model version: 3.9 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.8"
+MODEL_VERSION = "3.9"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -192,11 +192,45 @@ def active_season_year_for_run(today=None) -> Optional[int]:
     return None
 
 
+def _season_games_elapsed(season_year, today) -> Optional[int]:
+    """Team games a college programme has played by `today` in season
+    `season_year` - a conservative floor from the run calendar, not a
+    schedule lookup.
+
+    v3.9: the F2 in-season shrink keyed only on the PLAYER's games
+    played, so a player who missed games was discounted as if the
+    season itself were half-unplayed: on a late-November run a 9-game
+    player was shrunk as a 9/12 sample with five games of regression
+    still to come, when one regular-season game remained. The shrink
+    prices regression risk over the games REMAINING, and games
+    remaining are bounded by the calendar, not by the player's
+    availability. Profiles store no team-games field, so the calendar
+    is the only honest source: the season starts Aug 25 (this module's
+    own season-start convention, see active_season_year_for_run),
+    teams play roughly weekly, and one bye week is banked, giving
+    weeks since Aug 25 minus one, clamped to [0, 12]. The banked bye
+    keeps the floor at or below what every programme has had the
+    chance to play, so it can only understate season progress, never
+    overstate it. Returns None when the run date is unknown (the
+    caller pinned none), which keeps the pre-3.9 GP-only shrink.
+    """
+    if season_year is None or today is None:
+        return None
+    from datetime import date as _d, datetime as _dt
+    if isinstance(today, _dt):
+        today = today.date()
+    start = _d(int(season_year), 8, 25)
+    days = (today - start).days
+    if days < 0:
+        return 0
+    return max(0, min(12, days // 7 - 1))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _shrink_partial(raw: float, baseline: float, gp) -> float:
+def _shrink_partial(raw: float, baseline: float, gp, elapsed=None) -> float:
     """v3.6 (round-2 audit F2): shrink an in-progress season's leg score
     toward a baseline by the sample-size factor min(1, GP/12) - the
     idiom the model already uses for its in-season pacing and its
@@ -205,8 +239,18 @@ def _shrink_partial(raw: float, baseline: float, gp) -> float:
     priced nowhere in the grade itself (only inside production's
     counting-stat gates), so a hot 6-game partial season graded at
     full weight. At 12+ games the shrink is 1.0 and the raw score
-    stands."""
-    f = min(1.0, max(_safe(gp, 12), 0.0) / 12.0)
+    stands.
+
+    v3.9: when the run calendar is pinned, the sample is the LARGER of
+    the player's games and the season's elapsed team games
+    (_season_games_elapsed): the regression the shrink guards against
+    can only happen in games still to be played, and a player who
+    missed games in a nearly finished season has almost none left.
+    With elapsed=None the GP-only factor stands, byte-identical."""
+    g = _safe(gp, 12)
+    if elapsed is not None:
+        g = max(g, float(elapsed))
+    f = min(1.0, max(g, 0.0) / 12.0)
     return baseline + f * (raw - baseline)
 
 
@@ -448,6 +492,14 @@ CONF_QUALITY: Dict[str, float] = {
 }
 
 DEFAULT_CONF_QUALITY = 0.72   # unknown ≈ neutral, not penalised like a weak G5
+
+# Competition leg top anchor (the _scale hi for conference quality).
+# 1.03 through 3.8: set ABOVE the best real conference (SEC 1.00) as
+# a v3.6 de-saturation, which capped the leg's maximum for any
+# player at 94.83 - 100 unreachable by construction. v3.9 (ceiling
+# redesign): the best real conference earns the leg's top (1.00);
+# separation still comes from the quality table below it.
+_COMPETITION_SCALE_HI = 1.00
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sagarin team-caliber dominator adjustment
@@ -884,6 +936,7 @@ def calc_production_score(
     skip_sagarin: bool = False,
     _inseason_year: Optional[int] = None,
     _draft_year: Optional[int] = None,
+    _season_elapsed: Optional[int] = None,
 ) -> Optional[float]:
     """
     Per-game production vs position-specific elite thresholds.
@@ -936,7 +989,8 @@ def calc_production_score(
             # v3.6 (F2): a lone in-progress season shrinks toward the
             # leg's neutral point - there is no completed baseline.
             _single = _shrink_partial(_single, 52.0,
-                                      _safe(ls.get("games_played"), 12))
+                                      _safe(ls.get("games_played"), 12),
+                                      elapsed=_season_elapsed)
         if pos == "RB":
             _single = _clip(_single + _rb_receiving_share_credit(seasons))
         return _production_zero_verdict(_clip(_single), [ls], pos,
@@ -984,11 +1038,13 @@ def calc_production_score(
             default=52.0)
         if ls.get("season") == _inseason_year:
             latest_score = _shrink_partial(
-                latest_score, _baseline, _safe(ls.get("games_played"), 12))
+                latest_score, _baseline, _safe(ls.get("games_played"), 12),
+                elapsed=_season_elapsed)
         if peak_season.get("season") == _inseason_year:
             best_score = _shrink_partial(
                 best_score, _baseline,
-                _safe(peak_season.get("games_played"), 12))
+                _safe(peak_season.get("games_played"), 12),
+                elapsed=_season_elapsed)
 
     # v3.8 (under-rating audit M2): the blend leans harder on the best
     # completed season - 90% on whichever is higher (recent or peak),
@@ -1125,6 +1181,7 @@ def calc_efficiency_score(
     eval_metrics: Optional[Dict] = None,
     wepa: Optional[Dict] = None,
     _inseason_year: Optional[int] = None,
+    _season_elapsed: Optional[int] = None,
 ) -> Optional[float]:
     """
     Per-attempt / per-target efficiency.  Rewards quality over quantity.
@@ -1282,11 +1339,13 @@ def calc_efficiency_score(
                     if _inseason_year is not None:
                         if ls.get("season") == _inseason_year:
                             eff = _shrink_partial(
-                                eff, _b_eff, _safe(ls.get("games_played"), 12))
+                                eff, _b_eff, _safe(ls.get("games_played"), 12),
+                                elapsed=_season_elapsed)
                         elif _best_qb.get("season") == _inseason_year:
                             _b_eff = _shrink_partial(
                                 _b_eff, eff,
-                                _safe(_best_qb.get("games_played"), 12))
+                                _safe(_best_qb.get("games_played"), 12),
+                                elapsed=_season_elapsed)
                     eff = eff * 0.15 + _b_eff * 0.85  # v3.2 R7-A2: peak blend matches production (85% peak / 15% latest)
                 elif (_inseason_year is not None
                         and ls.get("season") == _inseason_year):
@@ -1294,7 +1353,8 @@ def calc_efficiency_score(
                     # shrink it toward the leg neutral, the lone-season
                     # doctrine production already uses.
                     eff = _shrink_partial(
-                        eff, 52.0, _safe(ls.get("games_played"), 12))
+                        eff, 52.0, _safe(ls.get("games_played"), 12),
+                        elapsed=_season_elapsed)
         if eff is None:
             return None
 
@@ -1399,7 +1459,8 @@ def calc_efficiency_score(
             # either - shrink toward the leg neutral.
             _base_eff = 52.0
         eff = _shrink_partial(eff, _base_eff,
-                              _safe(ls.get("games_played"), 12))
+                              _safe(ls.get("games_played"), 12),
+                              elapsed=_season_elapsed)
 
     # Model v2.0: opponent-adjusted WEPA blend.  wepa_score is a 0-100
     # percentile within the season/position cohort - a conservative 25% blend
@@ -1469,6 +1530,41 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     return _clip(score, 10, 100)
 
 
+def _dom_ratio_score(ratio: float, pos: str) -> float:
+    """The breakout leg's dominator curve: a dominator ratio (vs the
+    position threshold) priced on the leg's own scale. Above the
+    threshold the curve saturates at the v3.6 multiples (WR 1.7x,
+    RB 2.0x, TE 2.4x - v3.3 F3 introduced the saturation, v3.6
+    raised the multiples to recorded-best-plus-margin so the curve
+    stops pinning at marks real breakout seasons actually reach);
+    below it, it ramps linearly through 60 at the threshold. Shared
+    by the peak-dominator term and the v3.9 arrival term so both
+    price level on one scale."""
+    if ratio > 1:
+        _sat = {"WR": 1.7, "RB": 2.0, "TE": 2.4}.get(pos, 1.8)
+        return min(100, 60 + 40 * min((ratio - 1) / (_sat - 1), 1))
+    return min(100, max(0, (ratio - 1) * 50 + 60))
+
+
+# v3.9 (arrive-elite fix): the trajectory term prices RISE - per-game
+# growth from the first season to the peak. A player who ARRIVES
+# elite has no rise to price: his debut is at (or near) his peak, so
+# the growth scale reads his flat-elite path at ~25 and the leg
+# lands mediocre for exactly the profiles it should crown (Bowers'
+# breakout read 55 with a freshman season at his career level).
+# The arrival term prices the other shape of the same evidence: the
+# LEVEL of the first featured season, on the leg's own dominator
+# curve. traj takes the better of the two - a riser keeps his
+# growth price (his debut level was ordinary), an arriver is priced
+# on the level he arrived at. When the debut season IS the peak,
+# the arrival credit is discounted by how much of the debut's
+# per-game rate he held in his latest season, so a one-year wonder
+# cannot bank the full price. QB is untouched: the QB breakout
+# weight is popped before blending (v3.2 V6c), so the leg is never
+# priced for QBs.
+BREAKOUT_CFG = {"arrival": True}
+
+
 def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str,
                         _inseason_year: Optional[int] = None) -> Optional[float]:
     """
@@ -1528,20 +1624,7 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
     elif thresh is None:
         dom_score = 50.0  # unknown position
     elif dom > 0:
-        _ratio = dom / thresh
-        if _ratio > 1:
-            # v3.3 F3: above-threshold saturation. WR saturates at 1.4x the
-            # threshold (a 0.35 dominator, just beyond recorded WR seasons);
-            # RB/TE keep 1.8x, which is algebraically identical to the old
-            # linear curve (40 / 0.8 = 50 points per unit of ratio).
-            # v3.6: multiples raised to recorded-best-plus-margin - WR
-            # 1.4 -> 1.7 (a 0.425 dominator), RB 1.8 -> 2.0, TE 1.8 -> 2.4
-            # (a 0.29 pass share) - so the leg's largest component stops
-            # pinning at marks real breakout seasons actually reach.
-            _sat = {"WR": 1.7, "RB": 2.0, "TE": 2.4}.get(pos, 1.8)
-            dom_score = min(100, 60 + 40 * min((_ratio - 1) / (_sat - 1), 1))
-        else:
-            dom_score = min(100, max(0, (_ratio - 1) * 50 + 60))
+        dom_score = _dom_ratio_score(dom / thresh, pos)
     else:
         dom_score = 30.0
 
@@ -1568,6 +1651,26 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             # bonus below).
             _growth = (_pg(_b) - _pg(_a)) / _pg(_a)
             traj_score = _clip(_scale(_growth, -0.20, 0.60))
+
+        # v3.9 arrival term (see BREAKOUT_CFG): the better of the
+        # rise price and the arrival price. The arrival season is
+        # the first FEATURED season (a cameo debut is the growth
+        # origin, not an arrival); its dominator level is priced on
+        # the leg's own curve. When that season is also the peak,
+        # the credit is discounted by the share of its per-game
+        # rate held in the latest season (floor 0.5: a real decline
+        # halves it, an injury-shortened rate season cannot erase
+        # it - _pg is a rate, not a total).
+        if BREAKOUT_CFG.get("arrival") and thresh is not None:
+            _feat = next((s for s in sorted_s
+                          if _is_role_season(s, pos)), sorted_s[0])
+            _fdom = _dom_of(_feat)
+            if _fdom > 0:
+                _arrival = _dom_ratio_score(_fdom / thresh, pos)
+                if _peak_s is _feat and _pg(_feat) > 0:
+                    _arrival *= _clip(
+                        _pg(sorted_s[-1]) / _pg(_feat), 0.5, 1.0)
+                traj_score = max(traj_score, _arrival)
 
     # Adjusted breakout age - continuous scale calibrated by position.
     # Uses the age the player was in the FIRST season they hit the dom threshold,
@@ -1863,7 +1966,8 @@ def calc_athleticism_score(athleticism: Dict[str, Any], position: str) -> float:
 
 
 def calc_utilization_score(seasons: List[Dict], position: str,
-                           _inseason_year: Optional[int] = None) -> Optional[float]:
+                           _inseason_year: Optional[int] = None,
+                           _season_elapsed: Optional[int] = None) -> Optional[float]:
     """
     Volume of opportunity - how much of the team's offence ran through this player.
 
@@ -1896,7 +2000,8 @@ def calc_utilization_score(seasons: List[Dict], position: str,
         # either - shrink toward the leg neutral.
         _base = 50.0
     return _clip(_shrink_partial(raw, _base,
-                                 _safe(ls.get("games_played"), 12)))
+                                 _safe(ls.get("games_played"), 12),
+                                 elapsed=_season_elapsed))
 
 
 def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
@@ -2089,10 +2194,13 @@ def calc_competition_score(
             except (TypeError, ValueError):
                 pass
 
-    # v3.6: top anchor 1.03 (was 1.00, the SEC table value itself), so a
-    # career SEC player lands ~95 and a career Big Ten player ~90 instead
-    # of both collapsing to exactly 100.
-    return _clip(_scale(avg_quality, 0.45, 1.03))
+    # v3.6 set the top anchor to 1.03 (above the SEC table value), so a
+    # career SEC player landed ~95 and a career Big Ten player ~90
+    # instead of both collapsing to exactly 100. v3.9 re-anchors to
+    # 1.00 (see _COMPETITION_SCALE_HI): the SEC career earns 100 and
+    # the Big Ten career 94.55 - the separation v3.6 wanted, without
+    # an unreachable top.
+    return _clip(_scale(avg_quality, 0.45, _COMPETITION_SCALE_HI))
 
 
 def calc_environment_adjustment(seasons: List[Dict], position: str) -> float:
@@ -2368,6 +2476,130 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # to a flat 0.05) is retired: it operated on pre-fit design tables,
 # and applying it to the fitted set would move every weight off the
 # gated values.
+# v3.9 (ceiling redesign): the final blend. Through 3.8 the grade was
+# a plain weighted MEAN of the priced legs, and the mean is a hard
+# ceiling: a generational profile whose legs read 100/100/97/94/93
+# averages to ~93 no matter how the weights are fitted, so the best
+# prospect of a decade printed 92-94 while the scale promises the
+# high 90s are attainable. The blend keeps the weighted mean as its
+# base and adds ONE peak term: a share of the grade is priced on the
+# prospect's best legs instead of his average leg, so a profile that
+# is elite at what it does best separates from a profile that is
+# merely good everywhere.
+#
+#   grade = (1 - alpha) * weighted_mean(all priced legs)
+#         + alpha * weighted_mean(top `peak_k` priced legs)
+#
+# peak_k counts legs, ranked by score; their weights renormalize
+# inside the peak term. Two guards keep the peak honest:
+# - Production is the price of admission: the peak set always
+#   carries the production leg, so a profile with no production (a
+#   recorded 0.0 next to one spike leg - the under-rating audit's
+#   P1 hard-zero class) cannot be priced on its spikes alone. In
+#   the offline sweep, unanchored peak emphasis lifted that class
+#   up to +16 points; anchored, its mean lift (+1.2) sits BELOW the
+#   healthy pool's (+3.3).
+# - A profile under the multi-None anchor (no measured performance
+#   core, v3.8) earns no peak term at all: its grade is the anchored
+#   mean, because context legs alone are not a peak.
+# - QBs take a smaller peak share (0.30 vs 0.60): college QB volume
+#   is the least portable signal in the model - a pass-happy offense
+#   hands a bust three 100 legs - and at the full share the
+#   Poor-outcome QB tier's >=70 rate tripled (10% -> 30%); at 0.30
+#   it is unchanged from the mean blend while the QB gate still
+#   improves.
+#
+# Nothing here rescales the output: the same formula prices every
+# profile, the 99.9 clamp still binds, and 100 stays impossible
+# (the peak term is itself a weighted mean of legs <= 100, blended
+# with a mean below it for any real profile). Offline gate vs 3.8
+# (gate_rows_v3 substrate): QB +.004/+.003, RB +.005/+.005,
+# WR -.000/+.001, TE +.007/-.009 - the TE Spearman whisker is the
+# one documented exception (within noise at n=196; TE profiles
+# price few legs, so a 4-leg peak reorders their middle; TE
+# Pearson improves and the TE tier table is undamaged). A
+# blend-aware re-fit of the position weights was run and REJECTED:
+# leave-one-class-out CV scored the fitted set at or below the
+# shipped F12 weights at every position under this blend.
+BLEND_CFG = {
+    "peak_alpha": 0.60,
+    "peak_alpha_by_pos": {"QB": 0.30},
+    "peak_k": 4,
+}
+
+
+# v3.9 competition discount (Kaedon 2026-11-24: "competition
+# should matter more" - the case was a Tarleton State (FCS) QB
+# priced #9 in his class on a 93.9 production leg). The production
+# and efficiency legs price raw per-game output on absolute scales,
+# so a gaudy line against FCS defenses entered the blend at face
+# value while the additive competition leg (~4-10% of the weight,
+# and droppable from the peak set entirely) could not pull it
+# back. The discount prices the two absolute-output legs against
+# the level they were achieved at:
+#   factor = 1 - 0.35 * max(0, (65 - competition) / 65)
+# applied to the leg VALUES before weights, redistribution or
+# blending - the discounted values are the legs (payload,
+# percentiles and blend all read the same numbers). It is a slope,
+# not a cliff: competition at or above 65 (the G5/P4 boundary on
+# this leg's scale) pays nothing, and the price deepens linearly
+# to a 35% maximum at the scale's floor. Utilization is EXEMPT: a
+# share of team opportunity is a share at any level, and exempting
+# it preserved the small-school signal (the Cooper Kupp shape)
+# at no cost to the mechanism's effect on the case that prompted
+# it. Offline gate vs 3.8 (with the breakout arrival term): the
+# discount IMPROVES Pearson at all four positions (+.011 to
+# +.017) and Spearman at RB/WR; QB and TE Spearman move -.007
+# (within noise at n=106/196, mid-tier shuffles, Pearson improves
+# at both). The small-school cohort's mean grade moves -2.0 with
+# its within-cohort outcome correlation IMPROVING (.304 -> .316):
+# on the drafted record, level-inflated volume was noise, not
+# signal. The peak-guard alternative (shrinking the peak share
+# for low-competition profiles) was tested and rejected: it moved
+# the case player less than a point while taxing QB Spearman
+# twice as much. A plain competition-weight doubling was also
+# rejected (it lifts big-school busts - QB Poor-tier >=70 rate
+# 19% -> 29% - and floats fragments, max +10.8).
+COMPETITION_CFG = {
+    "prod_discount": 0.35,
+    "discount_floor": 65.0,
+    "discount_utilization": False,
+}
+
+
+def _blend_grade(priced, pos=None, allow_peak=True):
+    """Blend the priced legs [(name, weight, value), ...] into the
+    pre-adjustment grade. Weights renormalize over the legs present,
+    which is exactly the post-redistribution total (~1.0).
+
+    allow_peak=False prices the plain mean: the caller passes it
+    when the multi-None anchor fired (no measured performance core),
+    because a profile with no measured performance has no peak to
+    price - its context legs alone are not a peak."""
+    if not priced:
+        return 0.0
+    total_w = sum(w for _, w, _ in priced)
+    if total_w <= 0:
+        return 0.0
+    mean = sum(w * v for _, w, v in priced) / total_w
+    alpha = float((BLEND_CFG.get("peak_alpha_by_pos") or {}).get(
+        pos, BLEND_CFG.get("peak_alpha", 0.0)) or 0.0)
+    if alpha <= 0.0 or not allow_peak:
+        return mean
+    k = max(1, int(BLEND_CFG.get("peak_k", 4)))
+    top = sorted(priced, key=lambda t: t[2], reverse=True)[:k]
+    # Production is the price of admission for peak credit (see
+    # BLEND_CFG): the peak set always carries the production leg.
+    prod_leg = next((t for t in priced if t[0] == "production"), None)
+    if prod_leg is not None and prod_leg not in top:
+        top = top[:-1] + [prod_leg] if top else [prod_leg]
+    top_w = sum(w for _, w, _ in top)
+    if top_w <= 0:
+        return mean
+    peak = sum(w * v for _, w, v in top) / top_w
+    return (1.0 - alpha) * mean + alpha * peak
+
+
 POSITION_WEIGHTS = {
     "QB": {
         "production": 0.1869,
@@ -2858,11 +3090,17 @@ def score_prospect(
         and 1 <= _safe(_gp_mode) <= 11
     )
     _inseason_year = int(_active_season_year) if _inseason else None
+    # v3.9: the F2 shrink's season-progress floor, from the run
+    # calendar the caller pinned (_today). None when no date was
+    # pinned - the pre-3.9 GP-only shrink then stands in every leg.
+    _season_elapsed = (_season_games_elapsed(_inseason_year, _today)
+                       if _inseason else None)
 
     production_score    = calc_production_score(role_seasons, pos, eval_metrics=eval_metrics,
                                                 skip_sagarin=skip_sagarin,
                                                 _inseason_year=_inseason_year,
-                                                _draft_year=dy)
+                                                _draft_year=dy,
+                                                _season_elapsed=_season_elapsed)
     
     # Apply crowded-room bonus: prefer data-driven depth rank when available,
     # fall back to manually curated loaded_roster list when depth data is absent.
@@ -2886,7 +3124,8 @@ def score_prospect(
         production_score = _clip(production_score * loaded_roster_adjustment)
 
     utilization_score   = calc_utilization_score(
-        role_seasons, pos, _inseason_year=_inseason_year)
+        role_seasons, pos, _inseason_year=_inseason_year,
+        _season_elapsed=_season_elapsed)
     # v3.6 (round-2 audit F8): the crowded-room multiplier applies to
     # PRODUCTION ONLY (above). It used to multiply utilization in full
     # and echo into efficiency (40% of excess) and breakout (35%), so
@@ -2897,6 +3136,7 @@ def score_prospect(
         seasons, pos, eval_metrics=eval_metrics,
         wepa=prospect.get("wepa"),
         _inseason_year=_inseason_year,
+        _season_elapsed=_season_elapsed,
     )
 
     age_score           = calc_age_score(age, dy, pos)
@@ -2952,6 +3192,26 @@ def score_prospect(
     durability_score    = calc_durability_score(seasons, position=pos,
                                                 _inseason_year=_inseason_year,
                                                 _today=_today)
+
+    # v3.9 competition discount (see COMPETITION_CFG): the
+    # absolute-output legs are priced against the level they were
+    # achieved at, before weights, redistribution or blending see
+    # them - the discounted values are the legs (payload,
+    # percentiles and blend all read the same numbers).
+    # Utilization is exempt unless the cfg arms it (a share is a
+    # share at any level).
+    if (float(COMPETITION_CFG.get("prod_discount", 0.0) or 0.0) > 0.0
+            and competition_score is not None):
+        _c_floor = float(COMPETITION_CFG.get("discount_floor", 70.0))
+        _c_factor = 1.0 - float(COMPETITION_CFG["prod_discount"]) * max(
+            0.0, (_c_floor - competition_score) / _c_floor)
+        if production_score is not None:
+            production_score = _clip(production_score * _c_factor)
+        if utilization_score is not None and COMPETITION_CFG.get(
+                "discount_utilization", True):
+            utilization_score = _clip(utilization_score * _c_factor)
+        if efficiency_score is not None:
+            efficiency_score = _clip(efficiency_score * _c_factor)
 
     # v3.7: there is no capital leg. The draft_capital argument is
     # accepted for call compatibility and never read: no pick (actual,
@@ -3135,30 +3395,37 @@ def score_prospect(
     _sum_efficiency  = 52.0 if (_anchor_perf and efficiency_score is None)  else efficiency_score
     _sum_breakout    = 52.0 if (_anchor_perf and breakout_score is None)    else breakout_score
 
-    prospect_score = (
-        (_sum_production or 0.0)  * _weights.get("production", 0.0)    +
-        (_sum_utilization or 0.0) * _weights.get("utilization", 0.0)   +
-        (_sum_efficiency or 0.0)  * _weights.get("efficiency", 0.0)    +
-        age_score             * _weights.get("age", 0.0)           +
-        (_sum_breakout or 0.0)    * _weights.get("breakout", 0.0)      +
-        (athleticism_score or 0.0) * _weights.get("athleticism", 0.0)   +
-        (competition_score or 0.0) * _weights.get("competition", 0.0)   +
-        (environment_score or 0.0) * _weights.get("environment", 0.0) +
-        (durability_score or 0.0) * _weights.get("durability", 0.0) +
+    # v3.9 (ceiling redesign): the final grade is blended from the
+    # priced leg list by _blend_grade (see BLEND_CFG above
+    # POSITION_WEIGHTS). Every leg that survived the missing-leg
+    # redistribution above enters with its redistributed weight and
+    # its priced value (anchored performance legs at neutral 52.0);
+    # a leg whose weight was popped is absent, exactly as the old
+    # explicit sum priced it at 0.0 under a zero weight. The QB
+    # experience leg is priced in the same list (v3.6 F16: from the
+    # redistributed weights, like every other component).
+    _priced = []
+    for _leg_name, _leg_value in (
+        ("production", _sum_production),
+        ("utilization", _sum_utilization),
+        ("efficiency", _sum_efficiency),
+        ("age", age_score),
+        ("breakout", _sum_breakout),
+        ("athleticism", athleticism_score),
+        ("competition", competition_score),
+        ("environment", environment_score),
+        ("durability", durability_score),
         # v3.7: no draft-capital term - the leg does not exist.
-        # v2.0: recruiting pedigree. .get() because calibrated overrides
-        # (historical_calibration) predate the recruiting component.
-        # v3.6 (F10): None (missing) contributes 0 at a popped weight.
-        (recruiting_score or 0.0) * _weights.get("recruiting", 0.0)
-    )
+        ("recruiting", recruiting_score),
+    ):
+        _leg_w = _weights.get(_leg_name, 0.0)
+        if _leg_w > 0 and _leg_value is not None:
+            _priced.append((_leg_name, _leg_w, float(_leg_value)))
+    if pos == "QB" and _weights.get("experience", 0.0) > 0:
+        _priced.append(("experience", _weights["experience"],
+                        float(experience_score)))
 
-    # Add experience score for QBs. v3.6 (round-2 audit F16): priced
-    # from the REDISTRIBUTED weights like every other component - it
-    # used to read pos_weights directly, so a QB with any missing leg
-    # silently lost up to ~0.7 points against the model's own
-    # renormalization doctrine.
-    if pos == "QB" and "experience" in _weights:
-        prospect_score += experience_score * _weights["experience"]
+    prospect_score = _blend_grade(_priced, pos, allow_peak=not _anchor_perf)
 
     # v3.2 R7: no late-round upside add-on. The final grade is the
     # weighted component sum plus the bounded translation adjustment only.
@@ -3564,6 +3831,7 @@ def score_all_prospects(
     skip_sagarin: bool = False,
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
     active_season_year: Optional[int] = None,
+    _today=None,
 ) -> List[Dict[str, Any]]:
     """
     Score a list of prospects and add overall_rank / position_rank.
@@ -3575,6 +3843,10 @@ def score_all_prospects(
             date (see active_season_year_for_run), enabling v3.4
             in-season mode per player. None (the default, and what the
             backtest passes) grades every profile in COMPLETE mode.
+        _today:             The run date, pinned by the pipeline so
+            the v3.9 in-season shrink can price season progress
+            (_season_games_elapsed). None keeps the pre-3.9 GP-only
+            shrink; the backtest passes None.
 
     Returns:
         List of score dicts, sorted by prospect_score descending.
@@ -3592,6 +3864,7 @@ def score_all_prospects(
                 skip_sagarin=skip_sagarin,
                 position_weights_override=position_weights_override,
                 _active_season_year=active_season_year,
+                _today=_today,
             )
         )
 

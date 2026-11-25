@@ -97,8 +97,8 @@ def _prospect(pos, seasons, age=21.0, **kw):
 
 
 class TestVersion:
-    def test_model_version_is_38(self):
-        assert pm.MODEL_VERSION == "3.8"
+    def test_model_version_is_current(self):
+        assert pm.MODEL_VERSION == "3.9"
 
 
 class TestPhantomSeasonDrop:
@@ -445,9 +445,20 @@ class TestRoleGate:
             pm._rb_receiving_share_credit(seasons))
         r = pm.score_prospect(_prospect("RB", seasons),
                               skip_sagarin=True)
+        # The share the production leg reads is the gated one (the
+        # identity this test pins). v3.9 (competition discount):
+        # score_prospect then prices the raw leg against the level
+        # it was achieved at - this Akron (MAC) fixture's competition
+        # reads ~27, so the factor 1 - 0.35 x (65 - 27) / 65 = 0.80
+        # binds visibly: 62.15 raw x 0.797 = 49.53 priced.
+        _raw = pm.calc_production_score(gated, "RB", skip_sagarin=True)
+        _cfg = pm.COMPETITION_CFG
+        _factor = 1.0 - float(_cfg["prod_discount"]) * max(
+            0.0, (float(_cfg["discount_floor"])
+                  - r["competition_score"]) / float(_cfg["discount_floor"]))
+        assert _factor < 1.0
         assert r["production_score"] == pytest.approx(
-            pm.calc_production_score(gated, "RB", skip_sagarin=True),
-            abs=0.01)
+            _raw * _factor, abs=0.05)
 
 
 class TestPoolScreen:
@@ -604,7 +615,25 @@ class TestPostGateFixes:
             pm._role_gated_seasons(seasons, "TE"), 21.0, "TE")
         assert r["breakout_profile_score"] == pytest.approx(ungated,
                                                             abs=0.01)
-        assert ungated - gated > 20.0
+        # v3.9 (arrival term): the gated read no longer collapses.
+        # The leg prices the first FEATURED season's level as well
+        # as the rise, so a hypothetical gated read - whose first
+        # season is the peak itself - prices the arrival instead of
+        # re-basing growth onto the peak. The gap that was ~35
+        # (trajectory 100 -> ~0 at its 0.35 weight) is now ~6 (the
+        # growth price vs the arrival price of the same season).
+        # The mechanism pin: with the arrival term off, the old
+        # collapse returns.
+        assert ungated - gated < 12.0
+        _cfg = pm.BREAKOUT_CFG
+        pm.BREAKOUT_CFG = {"arrival": False}
+        try:
+            ungated_no_arr = pm.calc_breakout_score(seasons, 21.0, "TE")
+            gated_no_arr = pm.calc_breakout_score(
+                pm._role_gated_seasons(seasons, "TE"), 21.0, "TE")
+        finally:
+            pm.BREAKOUT_CFG = _cfg
+        assert ungated_no_arr - gated_no_arr > 20.0
 
     RADER = [
         {"season": 2016, "receptions": 4, "receiving_yards": 73,

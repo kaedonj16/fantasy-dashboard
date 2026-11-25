@@ -48,7 +48,7 @@ from data_building.rookie_pipeline.mock_draft_consensus import (
 
 class TestVersion:
     def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.8"
+        assert pm.MODEL_VERSION == "3.9"
 
 
 class TestCompetitionDesaturation:
@@ -56,14 +56,17 @@ class TestCompetitionDesaturation:
         return [{"season": y, "team": team, "conference": conf,
                  "games_played": 12} for y in (2023, 2024, 2025)]
 
-    def test_sec_and_big_ten_no_longer_both_pin_at_100(self):
-        # Pre-3.6 both conferences were quality 1.00 and the scale's top
-        # anchor was also 1.00: both careers scored exactly 100.
+    def test_sec_earns_the_top_big_ten_separates_below(self):
+        # v3.6 de-saturation set the top anchor at 1.03, ABOVE the
+        # best real conference (SEC 1.00), capping the leg at 94.83
+        # for every player who ever lived. v3.9 (ceiling redesign)
+        # re-anchors: the best real conference earns the leg's top,
+        # and separation still comes from the quality table below
+        # it - the Big Ten (0.97) reads 94.55, not 100.
         sec = pm.calc_competition_score(self._career("SEC", "Georgia"))
         b1g = pm.calc_competition_score(self._career("Big Ten", "Ohio State"))
-        assert sec == pytest.approx(94.83, abs=0.1)   # _scale(1.00, 0.45, 1.03)
-        assert b1g == pytest.approx(89.66, abs=0.1)   # _scale(0.97, 0.45, 1.03)
-        assert sec < 100.0 and b1g < 100.0
+        assert sec == pytest.approx(100.0, abs=0.1)   # _scale(1.00, 0.45, 1.00)
+        assert b1g == pytest.approx(94.55, abs=0.1)   # _scale(0.97, 0.45, 1.00)
         assert sec > b1g
 
     def test_sec_and_big_ten_separate_with_different_sos(self):
@@ -98,8 +101,13 @@ class TestBreakoutDesaturation:
         # At the 1.7x multiple, 0.425 is the new saturation point and
         # the pair separates by the dominator component's full span:
         # 0.45 weight x (100 - 82.86) = 7.71 points.
+        # v3.9 (arrival term): both fixture seasons carry the SAME
+        # dominator, so the first featured season IS the peak and the
+        # arrival term prices its level too - the pair separates by
+        # another 0.35 x (100 - 82.86) = 6.00 of trajectory span.
+        # Total separation: 7.71 + 6.00 = 13.71.
         diff = self._wr_breakout(0.425) - self._wr_breakout(0.35)
-        assert diff == pytest.approx(7.71, abs=0.3)
+        assert diff == pytest.approx(13.71, abs=0.3)
 
 
 class TestEfficiencyDesaturation:

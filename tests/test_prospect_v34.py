@@ -177,7 +177,13 @@ class TestFloorRedistribution:
         # weight rises 85 -> 90, his production leg 91.43 -> 92.55;
         # every other leg is byte-identical to 3.7 on this fixture
         # (the role gate excuses no season here).
-        assert out["prospect_score"] == 92.28
+        # v3.9 (ceiling redesign): -> 93.92. The final blend prices
+        # a peak term (top-4 legs at a 0.60 share) over the weighted
+        # mean, and the competition anchor moves 1.03 -> 1.00 (his
+        # Big Ten leg 89.66 -> 94.55). His top legs (utilization
+        # 100, production 92.55, efficiency 97.48) carry the peak;
+        # legs otherwise unchanged.
+        assert out["prospect_score"] == 93.92
 
     def test_inseason_suppresses_floor_and_redistributes(self):
         out = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
@@ -199,7 +205,9 @@ class TestFloorRedistribution:
         # -0.08 here).
         # v3.8 (M2): -> 87.85 (production 87.07 -> 87.52 on the
         # 90/10 blend; no other leg moves).
-        assert out["prospect_score"] == 87.85
+        # v3.9 (ceiling redesign): -> 89.80 (same blend + anchor
+        # step as complete mode; the shrunk legs are unchanged).
+        assert out["prospect_score"] == 89.80
         # GP 7 confidence discount: round(20 * (1 - 7/12)) = 8.
         # v3.7: 62.0 -> 47.0. The 15-point drop is the removed
         # capital-presence confidence (+10 for a mock-backed pick,
@@ -242,8 +250,11 @@ class TestFloorRedistribution:
         # production leg too (91.32 -> 91.65 / 88.05 -> 88.19); no
         # other leg moves. (Role gate: his 2-game backup season is
         # excused from the gated reads; it moved no leg.)
-        assert complete["prospect_score"] == 84.78
-        assert inseason["prospect_score"] == 84.00
+        # v3.9 (ceiling redesign): -> 86.09 / 85.27. QBs take the
+        # smaller peak share (0.30): his top legs (production,
+        # age) still lift him ~+1.3 over the mean blend.
+        assert complete["prospect_score"] == 86.09
+        assert inseason["prospect_score"] == 85.27
         assert complete["confidence_score"] == 45.0
         assert inseason["confidence_score"] == 33.0  # GP 5: discount 12
 
@@ -301,8 +312,18 @@ class TestPanelReproduction:
         # utilization's rise (.0861 -> .1332); net -1.07 / -1.06.
         # v3.8 (M2): -> 74.92 / 73.77 (production 42.55 -> 42.90 /
         # 43.33 -> 43.41 on the 90/10 blend; no other leg moves).
-        assert complete["prospect_score"] == 74.92
-        assert inseason["prospect_score"] == 73.77
+        # v3.9: in-season -> 74.17. At this pinned clock (Oct 19) the
+        # season is 6 team games old, above his 3 GP, so the shrink
+        # factor doubles (3/12 -> 6/12): utilization 57.54 -> 67.46
+        # and efficiency 91.77 -> 94.51 release toward their raw
+        # reads, production 43.41 -> 43.24 eases toward its (lower)
+        # raw read. Complete is untouched (no active year).
+        # v3.9 (ceiling redesign): -> 75.59 / 74.66. His career-SEC
+        # competition leg re-anchors 94.83 -> 100 and the peak term
+        # prices his 100 efficiency leg; production (42.90) anchors
+        # the peak set, so the lift stays modest.
+        assert complete["prospect_score"] == 75.59
+        assert inseason["prospect_score"] == 74.66
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44
@@ -319,8 +340,9 @@ class TestPanelReproduction:
         # capital_delta removed exactly) -> 84.69 under the fitted
         # weights (QB age's doubled effective share, same step as
         # the toggle test) -> 84.78 in v3.8 (M2 production blend,
-        # same step as the toggle test).
-        assert out["prospect_score"] == 84.78
+        # same step as the toggle test) -> 86.09 in v3.9 (ceiling
+        # redesign, same step as the toggle test).
+        assert out["prospect_score"] == 86.09
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his
         # durability is sane; QB durability weight is 0.00, so the

@@ -178,6 +178,7 @@ def _score_prospects(
     position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
     active_season_year: Optional[int] = None,
     draft_year: Optional[int] = None,
+    run_date: Optional[date] = None,
 ) -> List[Dict[str, Any]]:
     """Score a run's prospects through the SELECTED model.
 
@@ -212,7 +213,12 @@ def _score_prospects(
     return score_all_prospects(
         prospects, consensus_map,
         position_weights_override=position_weights_override,
-        active_season_year=active_season_year)
+        active_season_year=active_season_year,
+        # v3.9: the run date rides along so the in-season shrink can
+        # price season progress (_season_games_elapsed). Callers that
+        # pass an active season year pass the same calendar they
+        # derived it from; None keeps the pre-3.9 GP-only shrink.
+        _today=run_date)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2142,6 +2148,7 @@ def _score_from_db(
         position_weights_override=position_weights_override,
         active_season_year=active_season_year_for_run(),
         draft_year=draft_year,
+        run_date=date.today(),
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
@@ -2684,6 +2691,7 @@ def run_rookie_pipeline_staged(
         position_weights_override=position_weights_override,
         active_season_year=active_season_year_for_run(),
         draft_year=draft_year,
+        run_date=date.today(),
     )
     print(f"[pipeline] Scored {len(scores)} prospects")
 
