@@ -813,3 +813,84 @@ class TestPercentileOf:
         assert ra._percentile_of(19.0, pool, lower_better=True) == 100
         assert ra._percentile_of(22.9, pool, lower_better=True) == 3
         assert ra._percentile_of(19.0, pool) == 3  # same value, raw share
+
+
+class _FakeAbortedError(Exception):
+    """Stands in for psycopg3's InFailedSqlTransaction."""
+
+
+class _FakeRefConn:
+    """Connection fake with real psycopg3 transaction semantics: once a
+    statement fails, every later statement raises InFailedSqlTransaction
+    until rollback() clears the aborted state."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.aborted = False
+        self.rollbacks = 0
+
+    def execute(self, sql, params=None):
+        if self.aborted:
+            raise _FakeAbortedError(
+                "current transaction is aborted, commands ignored "
+                "until end of transaction block")
+        if "data_quality" in sql:
+            self.aborted = True
+            raise Exception('column "data_quality" does not exist')
+        rows = self._rows
+
+        class _Result:
+            def fetchall(self):
+                return rows
+
+        return _Result()
+
+    def rollback(self):
+        self.rollbacks += 1
+        self.aborted = False
+
+
+class TestReferenceRowsFallback:
+    """Regression (2026-11-24): _reference_rows' pre-migration-059
+    fallback SELECT ran on the same connection as the failed primary,
+    so the aborted transaction killed it too and every percentile pool
+    silently emptied (the site-wide PROD dashes). The fallback must
+    clear the aborted state before it runs."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        ra._reference_cache.pop("WR", None)
+        yield
+        ra._reference_cache.pop("WR", None)
+
+    def _patch_conn(self, monkeypatch, conn):
+        import contextlib
+
+        import dashboard_services.db as db
+
+        @contextlib.contextmanager
+        def fake_get_conn(*a, **kw):
+            yield conn
+
+        monkeypatch.setattr(db, "get_conn", fake_get_conn)
+
+    def test_fallback_survives_failed_primary(self, monkeypatch):
+        stored = _pop_rows(3)
+        conn = _FakeRefConn(stored)
+        self._patch_conn(monkeypatch, conn)
+        rows = ra._reference_rows("WR")
+        assert conn.rollbacks == 1
+        assert [r["production_score"] for r in rows] == \
+            [r["production_score"] for r in stored]
+
+    def test_both_queries_failing_still_fail_softs(self, monkeypatch):
+        class DeadConn(_FakeRefConn):
+            def execute(self, sql, params=None):
+                if self.aborted:
+                    raise _FakeAbortedError("aborted")
+                self.aborted = True
+                raise Exception("relation does not exist")
+
+        conn = DeadConn([])
+        self._patch_conn(monkeypatch, conn)
+        assert ra._reference_rows("WR") == []

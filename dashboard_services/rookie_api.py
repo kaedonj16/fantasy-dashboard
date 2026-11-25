@@ -1231,6 +1231,16 @@ def _reference_rows(position):
                     (pos,),
                 ).fetchall() or []
             except Exception:
+                # The failed primary leaves the transaction aborted
+                # (psycopg3 InFailedSqlTransaction), so the fallback
+                # would die on the same poisoned connection and the
+                # pool would fail-soft to []. Roll back first to clear
+                # the aborted state; if the rollback itself fails the
+                # fallback raises and the outer fail-soft still holds.
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 rows = conn.execute(
                     f"""SELECT {_cols}
                         FROM prospect_reference_population
