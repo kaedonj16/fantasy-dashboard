@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.9 (see MODEL_VERSION)
+Model version: 3.10 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.9"
+MODEL_VERSION = "3.10"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -1530,6 +1530,9 @@ def calc_age_score(age: Optional[float], draft_year: int, position: str) -> floa
     return _clip(score, 10, 100)
 
 
+DOM_CFG = {"curve_power": 0.65}
+
+
 def _dom_ratio_score(ratio: float, pos: str) -> float:
     """The breakout leg's dominator curve: a dominator ratio (vs the
     position threshold) priced on the leg's own scale. Above the
@@ -1539,10 +1542,25 @@ def _dom_ratio_score(ratio: float, pos: str) -> float:
     stops pinning at marks real breakout seasons actually reach);
     below it, it ramps linearly through 60 at the threshold. Shared
     by the peak-dominator term and the v3.9 arrival term so both
-    price level on one scale."""
+    price level on one scale.
+
+    DOM_CFG["curve_power"] (v3.10: 0.65; the shipped value through
+    3.9 was 1.0, the linear segment) bends the above-threshold
+    segment: a power below 1 steepens the slope just above the
+    threshold, where real breakouts cluster, and flattens it
+    toward saturation, where one generational share is much like
+    another. Under the linear segment a 1.23x-threshold season
+    priced 73 while the run from there to saturation was worth
+    more than the run from ordinary to elite; at 0.65 that season
+    prices 79 and a 1.5x season 92 (was 89), with the threshold
+    (60) and saturation (100) anchors unchanged."""
     if ratio > 1:
         _sat = {"WR": 1.7, "RB": 2.0, "TE": 2.4}.get(pos, 1.8)
-        return min(100, 60 + 40 * min((ratio - 1) / (_sat - 1), 1))
+        _x = min((ratio - 1) / (_sat - 1), 1)
+        _p = DOM_CFG.get("curve_power", 1.0)
+        if _p != 1.0:
+            _x = _x ** _p
+        return min(100, 60 + 40 * _x)
     return min(100, max(0, (ratio - 1) * 50 + 60))
 
 
@@ -1562,11 +1580,15 @@ def _dom_ratio_score(ratio: float, pos: str) -> float:
 # cannot bank the full price. QB is untouched: the QB breakout
 # weight is popped before blending (v3.2 V6c), so the leg is never
 # priced for QBs.
-BREAKOUT_CFG = {"arrival": True}
+BREAKOUT_CFG = {"arrival": True,
+                "age_anchor_draft": True,
+                "gate_lo": 0.65,
+                "gate_span": 0.4}
 
 
 def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str,
-                        _inseason_year: Optional[int] = None) -> Optional[float]:
+                        _inseason_year: Optional[int] = None,
+                        _draft_year: Optional[int] = None) -> Optional[float]:
     """
     Rewards early-career dominance and upward trajectory.
 
@@ -1672,6 +1694,30 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
                         _pg(sorted_s[-1]) / _pg(_feat), 0.5, 1.0)
                 traj_score = max(traj_score, _arrival)
 
+    # Age-in-season anchor, shared by the adjusted-breakout-age term
+    # and the elite underclassman floor. The pre-3.10 anchor was
+    # `age` (the age at the draft) minus the whole seasons between
+    # the target season and the LAST season on file. That silently
+    # charged a player his draft age for a season played years
+    # earlier whenever gap years followed it (opt-out, injury,
+    # COVID): Chase's 1,780-yard 2019 priced as a 21-year-old's
+    # season (his draft age) because 2020 is missing from his file,
+    # and the underclassman floor never fired for a season he
+    # played at 19. v3.10 ships the draft anchor (BREAKOUT_CFG
+    # age_anchor_draft, needs _draft_year): the age he actually was
+    # in that season - draft age less the years to the draft, plus
+    # 0.45 back from the late-April draft to the mid-November
+    # season midpoint. The legacy path stands only for callers
+    # that cannot supply a draft year. The dominance multiplier
+    # below was evaluated for softening in the same pass and left
+    # at its v3.2 shape: on a correctly anchored age it was worth
+    # ~1 leg point for the index case and nothing measurable at
+    # the gate - the tax was the anchor, not the gate.
+    def _age_in_season(_s_year, _current_year):
+        if BREAKOUT_CFG.get("age_anchor_draft") and _draft_year:
+            return age - (_draft_year - _s_year) + 0.45
+        return age - (_current_year - _s_year)
+
     # Adjusted breakout age - continuous scale calibrated by position.
     # Uses the age the player was in the FIRST season they hit the dom threshold,
     # not their current age.  A WR who dominated at 18 is a generational rarity;
@@ -1689,11 +1735,12 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             for s in sorted_s:
                 s_year = _safe(s.get("season"), 0)
                 if _dom_of(s) >= thresh and s_year > 0 and current_year > 0:
-                    breakout_age = age - (current_year - s_year)
+                    breakout_age = _age_in_season(s_year, current_year)
                     _crossed = True
                     break
             if not _crossed and current_year > 0 and _safe(_peak_s.get("season"), 0) > 0:
-                breakout_age = age - (current_year - _safe(_peak_s.get("season"), 0))
+                breakout_age = _age_in_season(
+                    _safe(_peak_s.get("season"), 0), current_year)
 
         if pos == "QB":
             # QBs develop later: age 18.5→100, age 23.5→0
@@ -1714,12 +1761,16 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
         # seasons where DOM can be volatile with small samples.
         if thresh is not None and thresh > 0 and pos != "QB":
             ratio = dom / thresh
+            _g_lo = BREAKOUT_CFG.get("gate_lo", 0.65)
+            _g_span = BREAKOUT_CFG.get("gate_span", 0.4)
             if ratio >= 1.0:
-                # v3.2 V6b: 1.0x -> 0.65, 1.4x -> 1.0
-                dominance_factor = min(1.0, 0.65 + (ratio - 1.0) / 0.4 * 0.35)
+                # v3.2 V6b: 1.0x -> 0.65, 1.4x -> 1.0 (the shipped
+                # gate_lo / gate_span defaults)
+                dominance_factor = min(
+                    1.0, _g_lo + (ratio - 1.0) / _g_span * (1.0 - _g_lo))
             else:
                 # v3.2 V6b: smooth ramp below threshold, no knife edge
-                dominance_factor = 0.65 * ratio * ratio
+                dominance_factor = _g_lo * ratio * ratio
             adj_breakout_score *= dominance_factor
 
     score = dom_score * 0.45 + traj_score * 0.35 + adj_breakout_score * 0.20
@@ -1736,7 +1787,7 @@ def calc_breakout_score(seasons: List[Dict], age: Optional[float], position: str
             s_year = _safe(s.get("season"), 0)
             if s_year <= 0 or current_year <= 0:
                 continue
-            s_age = age - (current_year - s_year)
+            s_age = _age_in_season(s_year, current_year)
             if s_age > 20:
                 continue
             # v3.4: for the in-progress season, the yardage gates are
@@ -3155,7 +3206,8 @@ def score_prospect(
     # early season serves only as the growth origin, never as a
     # dragged average. The leg's M1 volume None-exit still applies.
     breakout_score      = calc_breakout_score(seasons, age, pos,
-                                              _inseason_year=_inseason_year)
+                                              _inseason_year=_inseason_year,
+                                              _draft_year=dy)
 
     athleticism_score   = calc_athleticism_score(ath, pos)
     # v3.3 three-zone athleticism transform (class-wide; supersedes the

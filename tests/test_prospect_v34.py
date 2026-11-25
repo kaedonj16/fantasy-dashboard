@@ -183,7 +183,11 @@ class TestFloorRedistribution:
         # Big Ten leg 89.66 -> 94.55). His top legs (utilization
         # 100, production 92.55, efficiency 97.48) carry the peak;
         # legs otherwise unchanged.
-        assert out["prospect_score"] == 93.92
+        # v3.10 (dom curve + breakout-age anchor): -> 94.24. His
+        # breakout leg 88.97 -> 93.41 (the bent dom curve on his
+        # peak ratio and the draft-anchored breakout age); every
+        # other leg unchanged.
+        assert out["prospect_score"] == 94.24
 
     def test_inseason_suppresses_floor_and_redistributes(self):
         out = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
@@ -207,7 +211,10 @@ class TestFloorRedistribution:
         # 90/10 blend; no other leg moves).
         # v3.9 (ceiling redesign): -> 89.80 (same blend + anchor
         # step as complete mode; the shrunk legs are unchanged).
-        assert out["prospect_score"] == 89.80
+        # v3.10: -> 90.48 (the same breakout-leg move as complete
+        # mode, 88.97 -> 93.41, worth more here because the shrunk
+        # legs raise breakout's effective share of the blend).
+        assert out["prospect_score"] == 90.48
         # GP 7 confidence discount: round(20 * (1 - 7/12)) = 8.
         # v3.7: 62.0 -> 47.0. The 15-point drop is the removed
         # capital-presence confidence (+10 for a mock-backed pick,
@@ -322,8 +329,13 @@ class TestPanelReproduction:
         # competition leg re-anchors 94.83 -> 100 and the peak term
         # prices his 100 efficiency leg; production (42.90) anchors
         # the peak set, so the lift stays modest.
-        assert complete["prospect_score"] == 75.59
-        assert inseason["prospect_score"] == 74.66
+        # v3.10: -> 75.87 complete / 74.93 in-season (breakout
+        # 68.95 -> 72.58: the bent TE dom curve - the 2.4x
+        # saturation made TE's slope the shallowest - plus the
+        # draft-anchored breakout age; the same leg move flows
+        # through the in-season read at nearly the same size).
+        assert complete["prospect_score"] == 75.87
+        assert inseason["prospect_score"] == 74.93
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44

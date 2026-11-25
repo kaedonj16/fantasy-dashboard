@@ -48,7 +48,7 @@ from data_building.rookie_pipeline.mock_draft_consensus import (
 
 class TestVersion:
     def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.9"
+        assert pm.MODEL_VERSION == "3.10"
 
 
 class TestCompetitionDesaturation:
@@ -106,8 +106,13 @@ class TestBreakoutDesaturation:
         # arrival term prices its level too - the pair separates by
         # another 0.35 x (100 - 82.86) = 6.00 of trajectory span.
         # Total separation: 7.71 + 6.00 = 13.71.
+        # v3.10 (dom curve bent at 0.65): a 0.35 dominator now prices
+        # 87.80 on the dom component (was 82.86 linear), so the span
+        # to the 0.425 saturation point is 12.20 and the total is
+        # (0.45 + 0.35) x 12.20 = 9.76 (the age-gate span is 0: both
+        # ratios earn the gate's full credit).
         diff = self._wr_breakout(0.425) - self._wr_breakout(0.35)
-        assert diff == pytest.approx(13.71, abs=0.3)
+        assert diff == pytest.approx(9.76, abs=0.3)
 
 
 class TestEfficiencyDesaturation:

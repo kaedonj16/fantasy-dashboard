@@ -73,6 +73,13 @@ anchor re-bases 1.03 -> 1.00. Panel: SMITH 92.28 -> 93.92 complete
 (89.80 in-season), MESTEMAKER 84.78 -> 86.09 (85.27), GREEN
 74.92 -> 75.59 (74.66 at the pinned clock, after the shrink step).
 
+3.10 (dom curve bent at 0.65 + draft-anchored breakout age):
+SMITH 93.92 -> 94.24 complete (90.48 in-season; breakout leg
+88.97 -> 93.41), GREEN 75.59 -> 75.87 complete (74.93 at the
+pinned clock; breakout 68.95 -> 72.58), MESTEMAKER unchanged
+(the QB breakout weight is popped, so neither lever reaches
+his grade).
+
 The M2 role gate (seasons before the first real role excused from
 the production / utilization / breakout reads) changes no panel
 grade: Smith and Green carry no pre-role seasons, and Mestemaker's
@@ -166,7 +173,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.9"
+        assert pm.MODEL_VERSION == "3.10"
 
 
 class TestCapitalInvariance:
@@ -214,7 +221,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.9"
+        assert r["model_version"] == "3.10"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -253,9 +260,11 @@ class TestPanelGrades:
         # v3.9 ceiling redesign: 92.28 -> 93.92 complete, 87.85 ->
         # 89.80 in-season (peak blend + competition re-anchor; see
         # test_prospect_v34 for the decomposition).
-        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 93.92
+        # v3.10: -> 94.24 complete / 90.48 in-season (breakout leg
+        # 88.97 -> 93.41 on the bent dom curve + draft anchor).
+        assert _score(SMITH, _dc("WR", 2))["prospect_score"] == 94.24
         inseason = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
-        assert inseason["prospect_score"] == 89.80
+        assert inseason["prospect_score"] == 90.48
 
     def test_mestemaker(self):
         # v3.9 ceiling redesign: 84.78 -> 86.09 complete, 84.00 ->
@@ -269,14 +278,16 @@ class TestPanelGrades:
         inseason = _score(GREEN, _dc("TE", 35), _active_season_year=2026,
                           _today=_AS_OF)
         # v3.9 ceiling redesign: 74.92 -> 75.59 complete.
-        assert complete["prospect_score"] == 75.59
+        # v3.10: -> 75.87 complete (breakout 68.95 -> 72.58).
+        assert complete["prospect_score"] == 75.87
         # v3.9: 73.77 -> 74.17. At this pinned clock (Oct 19) the
         # season is 6 team games old, above his 3 GP, so the shrink
         # factor doubles (3/12 -> 6/12); see test_prospect_v34 for
         # the leg decomposition.
         # v3.9 ceiling redesign: 74.17 -> 74.66 (SEC competition
         # re-anchor + peak term, production-anchored).
-        assert inseason["prospect_score"] == 74.66
+        # v3.10: -> 74.93 (the same breakout-leg move as complete).
+        assert inseason["prospect_score"] == 74.93
 
     def test_panel_ordering_unchanged_by_the_fold(self):
         # The round-3 audit panel order (Smith > Mestemaker > Green
