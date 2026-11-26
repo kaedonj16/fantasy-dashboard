@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-25",
         "tag": "update",
+        "text": "The Jump to bar on the phone dashboard now matches the rest of the site: a rounded floating card with pill buttons, instead of a sharp strip across the screen.",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-11-25",
+        "tag": "update",
         "text": "On phones, the league dashboard now has a Jump to bar and a Tools grid, so your matchup, waivers, trades and more are one tap away instead of a long scroll. Standings, activity and awards start tucked away and expand when you want them.",
         "link": "/dashboard"
     },
