@@ -48,7 +48,7 @@ from data_building.rookie_pipeline.mock_draft_consensus import (
 
 class TestVersion:
     def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"
 
 
 class TestCompetitionDesaturation:

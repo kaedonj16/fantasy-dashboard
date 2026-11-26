@@ -221,7 +221,7 @@ class TestEndToEnd:
 
 class TestVersion:
     def test_model_version_is_311(self):
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"
 
     def test_shipped_revision_cfgs(self):
         # The 3.11 revision (Kaedon's three calibration flags):
@@ -588,7 +588,11 @@ _EFF_SPIKE = {"season": 2020, "yds_per_carry": 7.26,
 
 
 class TestEfficiencyVolumeShrink:
-    def test_small_sample_spike_is_shrunk(self):
+    # 3.13 re-pin: the volume shrink is DISABLED in favor of
+    # workload banding (Phase 6c, pinned in
+    # test_prospect_v313). The two value tests below now pin
+    # the banded reads of the same fixtures.
+    def test_small_sample_spike_is_band_priced(self):
         seasons = [_EFF_BASE, _EFF_SPIKE]
         raw = _eff(seasons, enabled=False)
         shrunk = _eff(seasons)
@@ -598,24 +602,33 @@ class TestEfficiencyVolumeShrink:
         # pooled pair-vs-composite gap), so the unshrunk leg
         # is 86.0 + the +1.29 consistency term (latest YPC
         # 7.26 vs the two-season average 6.43) = 87.29, where
-        # round 2 read a clipped 100.0.
-        assert raw == pytest.approx(87.29, abs=0.1)
+        # round 2 read a clipped 100.0. (With the shrink off
+        # in both arms under 3.13, raw keeps this read only
+        # because _eff's override no longer changes anything
+        # the bander does not already own - see the shipped
+        # value below.)
+        assert raw == pytest.approx(91.99, abs=0.1)
         # n = 157 + 25 = 182 opportunities behind the print:
-        # 85 + 2.29 x 182/282 = 86.48 (round 2: 94.68, when
-        # the pair form still printed its raw 100.0).
-        assert shrunk == pytest.approx(86.48, abs=0.15)
+        # inside its +/-75 workload window the 86.0 print is
+        # band-elite, and the ramped workload cap binds at
+        # 90 + 7 x 0.1 = 90.7; the leg is 90.7 + 1.29 = 91.99.
+        assert shrunk == pytest.approx(91.99, abs=0.15)
 
     def test_volume_backed_rate_stands(self):
         big = dict(_EFF_SPIKE, rush_attempts=400, rush_yards=2904,
                    receptions=60, receiving_yards=732)
         seasons = [_EFF_BASE, big]
         shrunk = _eff(seasons)
-        # Same parity-priced 87.29 print, more evidence behind
-        # it: n = 460, so 85 + 2.29 x 460/560 = 86.88 - the
-        # proven workload still keeps more of the excess than
-        # the 182-opportunity spike above (86.48).
-        assert shrunk == pytest.approx(86.88, abs=0.15)
-        assert shrunk > _eff([_EFF_BASE, _EFF_SPIKE])
+        # The same parity-priced 86.0 print at n = 460: among
+        # true workhorse seasons it is not band-elite (the
+        # window's p85 sits at/above it), so banding leaves
+        # it standing and the leg keeps the parity read
+        # 86.0 + 1.29 = 87.29. Under banding the ordering vs
+        # the 182-opportunity spike above inverts BY DESIGN:
+        # price is set within workload peers, capped by
+        # workload, not discounted toward a level.
+        assert shrunk == pytest.approx(87.29, abs=0.15)
+        assert shrunk < _eff([_EFF_BASE, _EFF_SPIKE])
 
     def test_ordinary_print_is_untouched(self):
         # A Barkley-shaped rate (5.86 YPC) prices ~76, below
@@ -647,7 +660,9 @@ class TestEfficiencyVolumeShrink:
 
     def test_shipped_eff_shrink_cfg(self):
         cfg = pm.EFF_VOLUME_SHRINK_CFG
-        assert cfg["enabled"] is True
+        # 3.13: disabled in favor of workload banding (6c);
+        # the level/k constants stay for the record.
+        assert cfg["enabled"] is False
         assert cfg["level"] == pytest.approx(85.0)
         assert cfg["k"] == pytest.approx(100.0)
 
@@ -955,7 +970,16 @@ class TestRBEfficiencyBlend:
 class TestRBEfficiencyComposite:
     """Round 4 (Phase B, part 2): the rush-quality composite
     behind the coverage gate (RB_EFF_CFG weights 0.40 YPC /
-    0.20 exp20 / 0.10 exp12 / 0.30 inverted stuff_ctx)."""
+    0.20 exp20 / 0.10 exp12 / 0.30 inverted stuff_ctx).
+
+    3.13 re-pin: the value assertions below pin the RAW
+    pricer, which 3.13 renamed _rb_efficiency_of_raw - the
+    public _rb_efficiency_of is now the workload-banding
+    choke point (Phase 6c, pinned in test_prospect_v313).
+    The blocked/fallback assertions keep reading the public
+    entry, which passes (None, "blocked") through and bands
+    the fallback pair read exactly as calc_efficiency_score
+    does."""
 
     _COVERED = dict(pbp_rush_att=217, pbp_team_games=13,
                     pbp_exp12_rate=0.132, pbp_exp20_rate=0.065,
@@ -968,7 +992,7 @@ class TestRBEfficiencyComposite:
         # = 71.94.
         s = _rb_season(2017, 217, 1302, rec=50, rec_yds=585,
                        **self._COVERED)
-        val, form = pm._rb_efficiency_of(s)
+        val, form = pm._rb_efficiency_of_raw(s)
         assert form == "composite"
         assert val == pytest.approx(71.94, abs=0.4)
 
@@ -996,7 +1020,7 @@ class TestRBEfficiencyComposite:
     def test_missing_stuff_ctx_renormalizes_out(self):
         s = _rb_season(2017, 217, 1302, rec=50, rec_yds=585,
                        **{**self._COVERED, "pbp_stuff_ctx": None})
-        val, form = pm._rb_efficiency_of(s)
+        val, form = pm._rb_efficiency_of_raw(s)
         assert form == "composite"
         # rush_q over the three remaining terms renormalized:
         # (71.43 x .40 + 76.92 x .20 + 68.57 x .10) / .70 = 72.59
@@ -1021,7 +1045,7 @@ class TestRBEfficiencyComposite:
 
     def test_no_rates_anywhere_is_the_pair_blend(self):
         s = _rb_season(2017, 217, 1302, rec=50, rec_yds=585)
-        val, form = pm._rb_efficiency_of(s)
+        val, form = pm._rb_efficiency_of_raw(s)
         assert form == "ypc"
         # The raw pair value is 71.43 x 0.70 + 95.71 x 0.30 =
         # 78.71; round 7's parity discount takes 35% of the
@@ -1407,6 +1431,9 @@ RB_W = pm.POSITION_WEIGHTS["RB"]
 
 
 class TestPairFormParity:
+    # 3.13 re-pin: parity is a property of the RAW pair read;
+    # the value assertions read _rb_efficiency_of_raw (the
+    # public entry point now bands the result - Phase 6c).
     def test_shipped_cfg(self):
         cfg = pm.EFF_FORM_PARITY_CFG
         assert cfg["enabled"] is True
@@ -1418,7 +1445,7 @@ class TestPairFormParity:
         # the raw pair at the 100 clip; parity credits
         # 100 - 40 x 0.35 = 86.0.
         s = _rb_season(2020, 157, 1140, rec=25, rec_yds=305)
-        val, form = pm._rb_efficiency_of(s)
+        val, form = pm._rb_efficiency_of_raw(s)
         assert form == "ypc"
         assert val == pytest.approx(86.0, abs=0.05)
 
@@ -1434,7 +1461,7 @@ class TestPairFormParity:
         # exactly as in round 4 (71.94); parity is pair-only.
         s = _rb_season(2017, 217, 1302, rec=50, rec_yds=585,
                        **TestRBEfficiencyComposite._COVERED)
-        val, form = pm._rb_efficiency_of(s)
+        val, form = pm._rb_efficiency_of_raw(s)
         assert form == "composite"
         assert val == pytest.approx(71.94, abs=0.4)
 
@@ -1443,7 +1470,7 @@ class TestPairFormParity:
             pm, "EFF_FORM_PARITY_CFG",
             {**pm.EFF_FORM_PARITY_CFG, "enabled": False})
         s = _rb_season(2020, 157, 1140, rec=25, rec_yds=305)
-        val, _ = pm._rb_efficiency_of(s)
+        val, _ = pm._rb_efficiency_of_raw(s)
         assert val == pytest.approx(100.0, abs=0.05)
 
 

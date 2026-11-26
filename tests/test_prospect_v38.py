@@ -98,7 +98,7 @@ def _prospect(pos, seasons, age=21.0, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"
 
 
 class TestPhantomSeasonDrop:
@@ -690,8 +690,16 @@ class TestPostGateFixes:
         # A QB filed at TE: his receiving fields are RECORDED zeros.
         # Production and utilization price at 0.0 - they do not go
         # missing and float the grade on context.
+        # v3.13 re-pin (Phase 7, L2): the TE production terms are
+        # ALL-PURPOSE now, so his recorded RUSHING prices: 451
+        # yards in 13 games (34.7/g) reads 4.96 on the yards term
+        # in 2015 and the blend lands at 4.46. Every RECEIVING
+        # term still prices exactly 0.0, and utilization is
+        # unchanged - the zeros are still measurements, never
+        # missing.
         seasons = [dict(s) for s in self.SWOOPES]
-        assert pm.calc_production_score(seasons, "TE") == 0.0
+        assert pm.calc_production_score(
+            seasons, "TE") == pytest.approx(4.46, abs=0.05)
         assert pm.calc_utilization_score(seasons, "TE") == 0.0
 
     def test_multi_none_anchor(self):

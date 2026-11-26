@@ -327,4 +327,4 @@ class TestArchetypeNeverFeedsGrade:
         # his production anchor; steps A/B do not touch him).
         r = _score(SMITH, None)
         assert r["prospect_score"] == 94.66
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"

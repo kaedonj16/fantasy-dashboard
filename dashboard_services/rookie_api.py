@@ -1169,7 +1169,7 @@ PCT_MIN_POPULATION = 30
 # 3.8 added: pools re-graded under the current model stamp 3.8 and
 # must be accepted by the registry when the re-grade lands.
 # 3.10 added on the same basis.
-_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "3.8", "3.9", "3.10", "3.11", "3.12", "4.1")
+_PCT_MODEL_VERSIONS = ("3.2", "3.3", "3.4", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "4.1")
 
 
 def _row_quarantined(r) -> bool:
