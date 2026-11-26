@@ -13,6 +13,9 @@ cron hook all write through here:
         the accepted groups, then notifies per the league's prefs.
     POST /api/autopilot/<platform>/<season>/<league_id>/replan
         Builds a fresh plan (superseding the open one) and returns it.
+    POST /api/autopilot/<platform>/<season>/<league_id>/run-now
+        Runs this league's scheduled pass immediately (the same
+        per-league code path the cron calls) for the signed-in owner.
     POST /api/autopilot/kill-switch
         {on: bool} - the account-wide switch (store-level; surfaced
         on the Autopilot page).
@@ -173,6 +176,51 @@ def api_autopilot_replan(platform: str, season: int, league_id: str):
         "status": built.get("status"),
         "plan_id": plan.get("id"),
         "swaps": len(plan.get("swaps") or []),
+    })
+
+
+@autopilot_bp.route(
+    "/api/autopilot/<platform>/<int:season>/<league_id>/run-now", methods=["POST"]
+)
+@limiter.limit("6 per minute")
+def api_autopilot_run_now(platform: str, season: int, league_id: str):
+    """Manual trigger of this league's scheduled pass, owner-session
+    authenticated (the page's Run now button; NOT the cron hook).
+
+    Runs the scheduler's own per-league code path: Auto executes the
+    fresh plan, Approve builds + stores it and notifies. A run already
+    in progress for the league (cron or manual) answers 409 instead
+    of queueing a second heavy plan build behind it.
+    """
+    account_id, err = _gate(platform, season, league_id)
+    if err:
+        return err
+    from dashboard_services import autopilot_schedule
+
+    outcome = autopilot_schedule.run_league_pass(
+        account_id, platform, league_id, season
+    )
+    o = outcome.get("outcome")
+    if o == "already_running":
+        return jsonify({
+            "ok": False, "status": o,
+            "error": "A run is already in progress for this league.",
+        }), 409
+    if o == "off":
+        return jsonify({
+            "ok": False, "status": o,
+            "error": "Autopilot is off for this league.",
+        }), 400
+    if o == "no_access":
+        return jsonify({"error": "Not found"}), 404
+    if o == "error":
+        return jsonify({
+            "ok": False, "status": o,
+            "error": "The run did not complete. Try again.",
+        }), 502
+    return jsonify({
+        "ok": True, "status": o, "swaps": outcome.get("swaps", 0),
+        "result_status": outcome.get("result_status"),
     })
 
 

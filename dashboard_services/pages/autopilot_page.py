@@ -42,18 +42,42 @@ transition:background .2s ease,color .2s ease}
 .ap-seg button.ap-on{background:var(--accent);color:var(--on-accent)}
 .ap-seg.ap-arming::after{content:"";position:absolute;inset:0;pointer-events:none;
 background:linear-gradient(100deg,transparent 20%,color-mix(in srgb,var(--accent) 28%,transparent) 50%,transparent 80%);
-transform:translateX(-100%);animation:apSweep .38s ease-out forwards}
+transform:translateX(-100%);animation:apSweep .5s ease-out forwards}
 @keyframes apSweep{to{transform:translateX(100%)}}
-.ap-hero{transition:box-shadow .3s ease}
-.ap-hero.ap-arming{animation:apArmPulse .38s ease-out}
-@keyframes apArmPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 45%,transparent)}
-100%{box-shadow:0 0 0 14px transparent}}
+.ap-seg::before{content:"";position:absolute;inset:0;border-radius:10px;pointer-events:none;
+box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 60%,transparent);opacity:0}
+.ap-seg.ap-arming::before{animation:apRingFade .55s ease-out}
+@keyframes apRingFade{0%{opacity:.9}100%{opacity:0}}
+.ap-hero{position:relative;overflow:hidden}
+.ap-hero::after{content:"";position:absolute;inset:0;border-radius:var(--radius);pointer-events:none;
+background:linear-gradient(100deg,transparent 25%,color-mix(in srgb,var(--accent) 15%,transparent) 50%,transparent 75%);
+transform:translateX(-100%);opacity:0}
+.ap-hero.ap-arming::after{animation:apHeroSheen .55s ease-out}
+@keyframes apHeroSheen{0%{transform:translateX(-100%);opacity:1}100%{transform:translateX(100%);opacity:1}}
+.ap-live .ap-view:not([hidden]){animation:apViewIn .3s ease-out}
+@keyframes apViewIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.ap-swap-out{opacity:0;transform:translateY(4px);transition:opacity .18s ease,transform .18s ease}
+.ap-swap-in{animation:apViewIn .32s ease-out}
+.ap-nextrun{display:flex;align-items:center;gap:12px;background:var(--accent-soft);
+border-radius:10px;padding:10px 12px;margin:0 0 12px}
+.ap-nextrun-main{font-size:14px;font-weight:800;color:var(--text);margin-top:1px}
+.ap-nextrun .ap-btn{margin-left:auto;flex:0 0 auto}
 .ap-quiet{font-size:13.5px;color:var(--text-muted);background:var(--row);border:1px solid var(--grid);
 border-radius:10px;padding:12px 14px}
 .ap-quiet b{color:var(--text)}
 .ap-error{font-size:13.5px;color:var(--text);background:var(--row);border:1px solid var(--grid);
 border-radius:10px;padding:12px 14px}
-.ap-move{position:relative;padding:12px 0 10px;border-top:1px solid var(--grid)}
+.ap-move{position:relative;padding:12px 0 10px;border-top:1px solid var(--grid);
+transition:opacity .2s ease}
+.ap-move.ap-running{opacity:.78}
+.ap-sheen{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.ap-sheen i{display:block;width:100%;height:100%;
+background:linear-gradient(100deg,transparent 30%,color-mix(in srgb,var(--accent) 14%,transparent) 50%,transparent 70%);
+transform:translateX(-100%)}
+.ap-move.ap-done .ap-sheen i{animation:apRowSweep .5s ease-out .1s}
+@keyframes apRowSweep{to{transform:translateX(100%)}}
+.ap-move.ap-shake{animation:apShake .3s ease-out}
+@keyframes apShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
 .ap-move::before{content:"";position:absolute;left:-12px;top:0;bottom:0;width:3px;
 background:var(--win);transform:scaleY(0);transition:transform .3s ease}
 .ap-move.ap-done::before{transform:scaleY(1)}
@@ -65,7 +89,12 @@ background:var(--accent-soft);border-radius:6px;padding:3px 7px;flex:0 0 auto;ma
 .ap-move-title{font-size:14.5px;font-weight:700;color:var(--text);line-height:1.3}
 .ap-move-why{font-size:12.5px;color:var(--text-muted);margin-top:2px;line-height:1.35}
 .ap-move-actions{display:flex;align-items:center;gap:10px;margin-top:9px}
-.ap-delta{font-size:15px;font-weight:800;color:var(--win);flex:0 0 auto}
+.ap-delta{display:inline-block;font-size:15px;font-weight:800;color:var(--win);flex:0 0 auto}
+.ap-move.ap-done .ap-delta{animation:apDeltaSettle .35s ease-out .1s}
+@keyframes apDeltaSettle{0%{transform:scale(1.22)}100%{transform:scale(1)}}
+.ap-qcount{display:inline-block}
+.ap-qcount.ap-tick{animation:apTick .4s ease-out}
+@keyframes apTick{0%{transform:scale(1)}35%{transform:scale(1.35)}100%{transform:scale(1)}}
 .ap-delta-neg{color:var(--text-muted)}
 .ap-move-actions .ap-spacer{flex:1}
 .ap-dismiss{border:0;background:transparent;color:var(--text-subtle);font:inherit;font-size:16px;
@@ -76,6 +105,10 @@ background:var(--accent);color:var(--on-accent);border:1px solid var(--accent);f
 font-size:13px;font-weight:700;border-radius:var(--radius-pill);cursor:pointer;white-space:nowrap;
 transition:opacity .2s ease,background .2s ease}
 .ap-btn[disabled]{opacity:.55;cursor:default}
+.ap-btn.ap-busy::before{content:"";width:12px;height:12px;margin-right:7px;border-radius:50%;
+border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;
+animation:apSpin .7s linear infinite;flex:0 0 auto}
+@keyframes apSpin{to{transform:rotate(360deg)}}
 .ap-btn-ghost{background:var(--card);color:var(--text);border-color:var(--border)}
 .ap-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .ap-flash{font-size:12.5px;color:var(--accent);font-weight:600}
@@ -85,12 +118,11 @@ border-radius:6px;padding:3px 7px;flex:0 0 auto;display:inline-flex;align-items:
 .ap-st-fail{color:var(--text);background:var(--row)}
 .ap-st-skip{color:var(--text-muted);background:var(--row)}
 .ap-st-queue{color:var(--accent);background:var(--accent-soft)}
-.ap-check{display:inline-block;animation:apCheckIn .3s ease-out}
-@keyframes apCheckIn{0%{opacity:0;transform:scale(.5)}100%{opacity:1;transform:scale(1)}}
-.ap-autonext{background:var(--accent-soft);border-radius:10px;padding:12px 14px;margin-bottom:6px}
+.ap-check{display:inline-block}
+.ap-check path{stroke-dasharray:100;stroke-dashoffset:100}
+.ap-done .ap-check path{animation:apDraw .45s ease-out .05s forwards}
+@keyframes apDraw{to{stroke-dashoffset:0}}
 .ap-autonext-lab{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent)}
-.ap-autonext-main{font-size:15px;font-weight:800;color:var(--text);margin-top:2px}
-.ap-autonext-sub{font-size:12.5px;color:var(--text-muted);margin-top:2px}
 .ap-sumrow{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-top:1px solid var(--grid);
 font-size:13px;color:var(--text-muted)}
 .ap-sumrow b{color:var(--text);text-align:right}
@@ -138,7 +170,7 @@ _SLOT_NAMES = {
 _CHECK_SVG = (
     '<svg class="ap-check" width="12" height="12" viewBox="0 0 24 24" fill="none" '
     'stroke="currentColor" stroke-width="3.2" stroke-linecap="round" '
-    'stroke-linejoin="round"><path d="M4.5 12.5l5 5L19.5 7"/></svg>'
+    'stroke-linejoin="round"><path pathLength="100" d="M4.5 12.5l5 5L19.5 7"/></svg>'
 )
 
 
@@ -251,10 +283,12 @@ _JS = """
 <script>
 (function(){
   var root=document.getElementById('apRoot'); if(!root){return;}
+  root.classList.add('ap-live');
   var PLATFORM=root.getAttribute('data-ap-platform'),SEASON=root.getAttribute('data-ap-season'),
       LEAGUE=root.getAttribute('data-ap-league');
   var base='/api/autopilot/'+PLATFORM+'/'+SEASON+'/'+LEAGUE;
-  var hero=document.getElementById('apHero');
+  var currentMode=root.getAttribute('data-ap-mode')||'off';
+  function $all(sel,el){return [].slice.call((el||root).querySelectorAll(sel));}
   function post(url,body){
     return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(body||{})}).then(function(r){
@@ -262,117 +296,267 @@ _JS = """
       });
   }
   function flash(msg){
-    root.querySelectorAll('.ap-flash').forEach(function(t){t.textContent=msg||'';});
+    $all('.ap-flash').forEach(function(t){t.textContent=msg||'';});
   }
-  // --- Mode segmented control -------------------------------------------
-  var seg=document.getElementById('apSeg');
-  if(seg){
-    seg.querySelectorAll('[data-ap-mode]').forEach(function(b){
-      b.addEventListener('click',function(){
-        var m=b.getAttribute('data-ap-mode');
-        if(b.classList.contains('ap-on')){return;}
-        if(m==='auto'){seg.classList.add('ap-arming'); if(hero){hero.classList.add('ap-arming');}}
-        b.disabled=true;
-        post(base+'/mode',{mode:m}).then(function(res){
-          if(res.ok){setTimeout(function(){location.reload();}, m==='auto'?380:60);}
-          else{seg.classList.remove('ap-arming'); if(hero){hero.classList.remove('ap-arming');}
-            b.disabled=false; flash('Could not change the mode. Try again.');}
-        }).catch(function(){seg.classList.remove('ap-arming'); b.disabled=false;});
+  function setBusy(btn,on,label){
+    if(!btn){return;}
+    if(on){btn.setAttribute('data-ap-label',btn.textContent);
+      btn.classList.add('ap-busy'); btn.disabled=true;
+      if(label){btn.textContent=label;}}
+    else{btn.classList.remove('ap-busy'); btn.disabled=false;
+      var l=btn.getAttribute('data-ap-label'); if(l){btn.textContent=l;}}
+  }
+  // --- Soft in-place refresh ---------------------------------------------
+  // Mode changes, executions, replans and manual runs all refresh the
+  // mode region + activity card by swapping in the freshly rendered
+  // fragments: no document reload, no scroll loss, no full repaint.
+  var refreshing=false;
+  function softRefresh(done){
+    if(refreshing){if(done){done(false);} return;}
+    refreshing=true;
+    fetch(window.location.href).then(function(r){return r.text();}).then(function(text){
+      var doc=new DOMParser().parseFromString(text,'text/html');
+      var oldCount=root.querySelector('.ap-qcount');
+      var oldN=oldCount?parseInt(oldCount.getAttribute('data-ap-qcount'),10):null;
+      ['apModeRegion','apActivity'].forEach(function(id){
+        var fresh=doc.getElementById(id), cur=document.getElementById(id);
+        if(fresh&&cur){
+          cur.classList.add('ap-swap-out');
+          setTimeout(function(){
+            var imp=document.importNode(fresh,true);
+            imp.classList.add('ap-swap-in');
+            cur.replaceWith(imp);
+          },180);
+        }
       });
+      var freshRoot=doc.getElementById('apRoot');
+      if(freshRoot){
+        root.setAttribute('data-ap-roster',freshRoot.getAttribute('data-ap-roster')||'{}');
+        root.setAttribute('data-ap-protected',freshRoot.getAttribute('data-ap-protected')||'[]');
+        currentMode=freshRoot.getAttribute('data-ap-mode')||currentMode;
+        root.setAttribute('data-ap-mode',currentMode);
+        syncProtectedFromRoot();
+      }
+      setTimeout(function(){
+        var nc=root.querySelector('.ap-qcount');
+        if(nc&&oldN!==null&&parseInt(nc.getAttribute('data-ap-qcount'),10)!==oldN){
+          nc.classList.add('ap-tick');
+        }
+        refreshing=false; if(done){done(true);}
+      },300);
+    }).catch(function(){refreshing=false; if(done){done(false);}});
+  }
+  // --- Mode segmented control ---------------------------------------------
+  // The mode POST only persists the mode (no plan build, no ESPN read),
+  // so the switch flips in place instantly: segment, status view, and
+  // the Auto arming animation all run off the optimistic update. When
+  // the target view was not rendered (the page renders the off view
+  // plus the active mode's view), the region soft-refreshes behind
+  // the animation instead of reloading the page.
+  function segEl(){return document.getElementById('apSeg');}
+  function markSeg(m){
+    var s=segEl(); if(!s){return;}
+    $all('[data-ap-mode]',s).forEach(function(b){
+      b.classList.toggle('ap-on',b.getAttribute('data-ap-mode')===m);});
+  }
+  function showView(m){
+    $all('.ap-view').forEach(function(v){
+      v.hidden=v.getAttribute('data-ap-view')!==m;});
+    var nr=document.getElementById('apNextRun');
+    if(nr){nr.hidden=(m==='off');}
+  }
+  function viewExists(m){
+    return !!root.querySelector('.ap-view[data-ap-view="'+m+'"]');
+  }
+  function clearArming(){
+    var s=segEl(), h=document.getElementById('apHero');
+    if(s){s.classList.remove('ap-arming');}
+    if(h){h.classList.remove('ap-arming');}
+  }
+  var modeBusy=false;
+  function chooseMode(m){
+    if(modeBusy||m===currentMode){return;}
+    modeBusy=true;
+    var prev=currentMode;
+    currentMode=m; markSeg(m);
+    if(m==='auto'){
+      var s=segEl(), h=document.getElementById('apHero');
+      if(s){s.classList.add('ap-arming');}
+      if(h){h.classList.add('ap-arming');}
+    }
+    if(viewExists(m)){showView(m);}
+    post(base+'/mode',{mode:m}).then(function(res){
+      modeBusy=false;
+      setTimeout(clearArming,560);
+      if(!res.ok){
+        currentMode=prev; markSeg(prev);
+        if(viewExists(prev)){showView(prev);}
+        flash('Could not change the mode. Try again.');
+        return;
+      }
+      if(!viewExists(m)){softRefresh();}
+    }).catch(function(){
+      modeBusy=false; clearArming();
+      currentMode=prev; markSeg(prev);
+      if(viewExists(prev)){showView(prev);}
+      flash('Could not change the mode. Try again.');
     });
   }
-  // --- Guardrail switches -------------------------------------------------
-  root.querySelectorAll('[data-ap-setting]').forEach(function(input){
-    input.addEventListener('change',function(){
-      var key=input.getAttribute('data-ap-setting'), body={}; body[key]=input.checked;
-      post(base+'/settings',body).then(function(res){
-        if(!res.ok){input.checked=!input.checked; flash('Could not save that setting.');}
-      }).catch(function(){input.checked=!input.checked;});
-    });
-  });
-  // --- Pause / resume -------------------------------------------------------
-  root.querySelectorAll('[data-ap-pause]').forEach(function(b){
-    b.addEventListener('click',function(){
-      var paused=b.getAttribute('data-ap-pause')==='1';
-      post(base+'/settings',{paused:paused}).then(function(res){
-        if(res.ok){location.reload();} else {flash('Could not change the pause state.');}
+  // --- Pause / resume (in place: banner + every pause button) -------------
+  function togglePause(btn){
+    var target=btn.getAttribute('data-ap-pause')==='1';
+    btn.disabled=true;
+    post(base+'/settings',{paused:target}).then(function(res){
+      btn.disabled=false;
+      if(!res.ok){flash('Could not change the pause state.'); return;}
+      var banner=document.getElementById('apPauseBanner');
+      if(banner){banner.hidden=!target;}
+      $all('[data-ap-pause]').forEach(function(b){
+        b.setAttribute('data-ap-pause',target?'0':'1');
+        b.textContent=target?(b.getAttribute('data-label-resume')||'Resume')
+                            :(b.getAttribute('data-label-pause')||'Pause');
       });
-    });
-  });
-  // --- Account kill switch --------------------------------------------------
-  var kill=document.getElementById('apKillSwitch');
-  if(kill){
-    kill.addEventListener('change',function(){
-      post('/api/autopilot/kill-switch',{on:kill.checked}).then(function(res){
-        if(res.ok){location.reload();} else {kill.checked=!kill.checked;}
-      }).catch(function(){kill.checked=!kill.checked;});
-    });
+    }).catch(function(){btn.disabled=false;});
   }
   // --- Queue: accept / dismiss ---------------------------------------------
-  var queue=document.getElementById('apQueue');
-  function runGroups(indexes, rows){
+  function runGroups(indexes, rows, btn){
+    var queue=document.getElementById('apQueue');
     if(!queue||!indexes.length){return;}
     var planId=queue.getAttribute('data-plan-id');
     rows.forEach(function(r){r.classList.add('ap-running');
-      r.querySelectorAll('button').forEach(function(x){x.disabled=true;});});
+      $all('button',r).forEach(function(x){x.disabled=true;});});
+    setBusy(btn,true,'Running');
     post(base+'/execute',{plan_id:parseInt(planId,10),groups:indexes}).then(function(res){
+      setBusy(btn,false);
       var result=(res.data&&res.data.result)||{};
       var byIndex={};
       (result.groups||[]).forEach(function(g){byIndex[g.index]=g;});
-      var settled=false;
+      var anyExecuted=false, anySettled=false;
       rows.forEach(function(r){
+        r.classList.remove('ap-running');
         var g=byIndex[parseInt(r.getAttribute('data-ap-group'),10)];
-        var out=r.querySelector('[data-ap-outcome]'); if(!out){return;}
-        out.hidden=false; settled=true;
-        if(g&&(g.outcome==='executed'||g.outcome==='already_applied')){
+        var out=r.querySelector('[data-ap-outcome]');
+        if(!out||!g){
+          $all('button',r).forEach(function(x){x.disabled=false;});
+          return;
+        }
+        anySettled=true; out.hidden=false;
+        if(g.outcome==='executed'||g.outcome==='already_applied'){
+          anyExecuted=true;
           r.classList.add('ap-done');
           out.className='ap-status ap-st-ok';
           out.innerHTML=__AP_CHECK__+(g.outcome==='executed'?'Executed &middot; Verified':'Already in place');
         } else {
-          r.classList.add('ap-failed');
+          r.classList.add('ap-failed','ap-shake');
           out.className='ap-status ap-st-fail';
           out.textContent='Failed: '+((g&&g.detail)||result.detail||'The move did not run.');
+          setTimeout(function(){r.classList.remove('ap-shake');},350);
         }
       });
       if(result.status==='superseded'){
         flash('Your roster changed since this plan was built. Refreshing with a fresh plan.');
+        setTimeout(function(){softRefresh();},700);
+      } else if(anyExecuted){
+        // Let the check draw + sweep play, then fade the fresh queue in.
+        setTimeout(function(){softRefresh();},1150);
+      } else if(!anySettled){
+        rows.forEach(function(r){
+          $all('button',r).forEach(function(x){x.disabled=false;});});
+        flash('The run did not complete. Try again.');
       }
-      if(settled||result.status){setTimeout(function(){location.reload();},1800);}
-    }).catch(function(){flash('The run did not complete. Refresh and try again.');});
-  }
-  if(queue){
-    queue.querySelectorAll('[data-ap-accept]').forEach(function(b){
-      b.addEventListener('click',function(){
-        var row=b.closest('.ap-move'); if(!row){return;}
-        runGroups([parseInt(row.getAttribute('data-ap-group'),10)],[row]);
-      });
+    }).catch(function(){
+      setBusy(btn,false);
+      rows.forEach(function(r){r.classList.remove('ap-running');
+        $all('button',r).forEach(function(x){x.disabled=false;});});
+      flash('The run did not complete. Try again.');
     });
-    queue.querySelectorAll('[data-ap-dismiss]').forEach(function(b){
-      b.addEventListener('click',function(){
-        var row=b.closest('.ap-move'); if(row){row.hidden=true;}
-        flash('Move dismissed. It stays unexecuted; running the rest logs it as skipped.');
-      });
-    });
-    var all=document.getElementById('apAcceptAll');
-    if(all){all.addEventListener('click',function(){
-      var rows=[].slice.call(queue.querySelectorAll('.ap-move')).filter(function(r){return !r.hidden;});
-      runGroups(rows.map(function(r){return parseInt(r.getAttribute('data-ap-group'),10);}),rows);
-    });}
-    var replan=document.getElementById('apReplan');
-    if(replan){replan.addEventListener('click',function(){
-      replan.disabled=true;
-      post(base+'/replan',{}).then(function(){location.reload();})
-        .catch(function(){replan.disabled=false;});
-    });}
   }
+  // --- Run now ---------------------------------------------------------------
+  function runNow(btn){
+    setBusy(btn,true,'Running');
+    post(base+'/run-now',{}).then(function(res){
+      setBusy(btn,false);
+      var d=res.data||{};
+      if(!res.ok){flash(d.error||'The run did not complete.'); return;}
+      if(d.status==='executed'){flash('Run complete. Moves executed and verified.');}
+      else if(d.status==='queued'){flash('Plan built. Moves are waiting for your approval.');}
+      else if(d.status==='no_moves'){flash('Run complete. Your lineup already matches the recommended lineup.');}
+      else{flash('Run complete.');}
+      softRefresh();
+    }).catch(function(){
+      setBusy(btn,false);
+      flash('The run did not complete. Try again.');
+    });
+  }
+  // --- Delegated clicks (survive soft-refresh fragment swaps) ---------------
+  root.addEventListener('click',function(ev){
+    var t=ev.target;
+    var modeBtn=t.closest('[data-ap-mode]');
+    if(modeBtn&&segEl()&&segEl().contains(modeBtn)){
+      chooseMode(modeBtn.getAttribute('data-ap-mode')); return;
+    }
+    var pauseBtn=t.closest('[data-ap-pause]');
+    if(pauseBtn){togglePause(pauseBtn); return;}
+    var acceptBtn=t.closest('[data-ap-accept]');
+    if(acceptBtn){
+      var row=acceptBtn.closest('.ap-move'); if(!row){return;}
+      runGroups([parseInt(row.getAttribute('data-ap-group'),10)],[row],acceptBtn);
+      return;
+    }
+    var dismissBtn=t.closest('[data-ap-dismiss]');
+    if(dismissBtn){
+      var drow=dismissBtn.closest('.ap-move'); if(drow){drow.hidden=true;}
+      flash('Move dismissed. It stays unexecuted; running the rest logs it as skipped.');
+      return;
+    }
+    if(t.closest('#apAcceptAll')){
+      var queue=document.getElementById('apQueue'); if(!queue){return;}
+      var rows=$all('.ap-move',queue).filter(function(r){return !r.hidden;});
+      runGroups(rows.map(function(r){
+        return parseInt(r.getAttribute('data-ap-group'),10);}),rows,t.closest('#apAcceptAll'));
+      return;
+    }
+    if(t.closest('#apRunNow')){runNow(t.closest('#apRunNow')); return;}
+    var replanBtn=t.closest('#apReplan');
+    if(replanBtn){
+      setBusy(replanBtn,true,'Rebuilding');
+      post(base+'/replan',{}).then(function(res){
+        if(res.ok){softRefresh(function(){setBusy(replanBtn,false);});}
+        else{setBusy(replanBtn,false); flash('Could not rebuild the plan.');}
+      }).catch(function(){setBusy(replanBtn,false);});
+      return;
+    }
+  });
+  // --- Delegated changes: guardrail switches + kill switch ------------------
+  root.addEventListener('change',function(ev){
+    var t=ev.target;
+    if(t.id==='apKillSwitch'){
+      post('/api/autopilot/kill-switch',{on:t.checked}).then(function(res){
+        if(res.ok){
+          var b=document.getElementById('apKillBanner');
+          if(b){b.hidden=!t.checked;}
+        } else {t.checked=!t.checked;}
+      }).catch(function(){t.checked=!t.checked;});
+      return;
+    }
+    if(t.hasAttribute&&t.hasAttribute('data-ap-setting')){
+      var key=t.getAttribute('data-ap-setting'), body={}; body[key]=t.checked;
+      post(base+'/settings',body).then(function(res){
+        if(!res.ok){t.checked=!t.checked; flash('Could not save that setting.');}
+      }).catch(function(){t.checked=!t.checked;});
+    }
+  });
   // --- Protected players ------------------------------------------------------
   var roster={};
-  try{roster=JSON.parse(root.getAttribute('data-ap-roster')||'{}');}catch(e){roster={};}
   var protectedIds=[];
-  try{protectedIds=JSON.parse(root.getAttribute('data-ap-protected')||'[]');}catch(e){protectedIds=[];}
-  var chipsBox=document.getElementById('apProtectedChips');
-  var rosterBox=document.getElementById('apRosterList');
+  function syncProtectedFromRoot(){
+    try{roster=JSON.parse(root.getAttribute('data-ap-roster')||'{}');}catch(e){roster={};}
+    try{protectedIds=JSON.parse(root.getAttribute('data-ap-protected')||'[]');}catch(e){protectedIds=[];}
+    renderProtected();
+  }
   function renderProtected(){
+    var chipsBox=document.getElementById('apProtectedChips');
+    var rosterBox=document.getElementById('apRosterList');
     if(!chipsBox||!rosterBox){return;}
     chipsBox.innerHTML='';
     if(!protectedIds.length){
@@ -405,7 +589,7 @@ _JS = """
       else{flash('Could not save the protected list.');}
     });
   }
-  renderProtected();
+  syncProtectedFromRoot();
 })();
 </script>
 """
@@ -465,6 +649,7 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
         delta_cls = "ap-delta" + (" ap-delta-neg" if (delta or 0) < 0 else "")
         queue_rows += f"""
       <div class="ap-move" data-ap-group="{i}">
+        <span class="ap-sheen"><i></i></span>
         <div class="ap-move-top">
           <span class="ap-tag">Lineup</span>
           <div class="ap-move-main">
@@ -490,7 +675,7 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
       </div>"""
     elif swaps:
         queue_inner = f"""
-      <p class="ap-card-sub" style="margin-bottom:2px"><b style="color:var(--text)">{len(swaps)} lineup move{'s' if len(swaps) != 1 else ''} queued for {e(week_label)}.</b> Nothing runs until you accept it. Accept the moves you want, dismiss the ones you don't.</p>
+      <p class="ap-card-sub" style="margin-bottom:2px"><b style="color:var(--text)"><span class="ap-qcount" data-ap-qcount="{len(swaps)}">{len(swaps)}</span> lineup move{'s' if len(swaps) != 1 else ''} queued for {e(week_label)}.</b> Nothing runs until you accept it. Accept the moves you want, dismiss the ones you don't.</p>
       {queue_rows}
       <div class="ap-actions">
         <button class="ap-btn" type="button" id="apAcceptAll">Accept all</button>
@@ -513,24 +698,38 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
       <button type="button" data-ap-mode="approve" role="tab" class="{'ap-on' if mode == 'approve' else ''}">Approve</button>
       <button type="button" data-ap-mode="auto" role="tab" class="{'ap-on' if mode == 'auto' else ''}">Auto</button>
     </div>"""
-    banners = ""
-    if kill:
-        banners += (
-            '<div class="ap-banner ap-banner-warn">Your account-wide Autopilot '
-            "kill switch is on. Nothing plans or executes in any league until "
-            "you turn it off below.</div>"
-        )
-    if paused:
-        banners += (
-            '<div class="ap-banner ap-banner-warn">This league is paused. '
-            "Plan runs and executions are halted until you resume.</div>"
-        )
-    if mode == "off":
-        mode_view = """
-      <div class="ap-quiet"><b>Autopilot is off for this league.</b><br>BR keeps making recommendations. Nothing is planned or executed. Switch to Approve to queue moves, or Auto to run them on schedule.</div>"""
-    elif mode == "approve":
-        mode_view = queue_html
-    else:  # auto
+    # Banners render in both states (hidden when inactive) so the page
+    # JS can toggle them in place on pause / kill-switch changes
+    # without a reload.
+    banners = (
+        '<div class="ap-banner ap-banner-warn" id="apKillBanner"'
+        f'{" hidden" if not kill else ""}>Your account-wide Autopilot '
+        "kill switch is on. Nothing plans or executes in any league until "
+        "you turn it off below.</div>"
+        '<div class="ap-banner ap-banner-warn" id="apPauseBanner"'
+        f'{" hidden" if not paused else ""}>This league is paused. '
+        "Plan runs and executions are halted until you resume.</div>"
+    )
+    off_view = f"""
+      <div class="ap-view" data-ap-view="off"{'' if mode == 'off' else ' hidden'}>
+        <div class="ap-quiet"><b>Autopilot is off for this league.</b><br>BR keeps making recommendations. Nothing is planned or executed. Switch to Approve to queue moves, or Auto to run them on schedule.</div>
+      </div>"""
+    next_run_label = str(data.get("next_run_label") or "")
+    next_run_bar = ""
+    if mode != "off" and next_run_label:
+        next_run_bar = f"""
+      <div class="ap-nextrun" id="apNextRun">
+        <div>
+          <div class="ap-autonext-lab">Next run</div>
+          <div class="ap-nextrun-main">{e(next_run_label)}</div>
+        </div>
+        <button class="ap-btn ap-btn-ghost" type="button" id="apRunNow">Run now</button>
+      </div>"""
+    if mode == "approve":
+        mode_view = f"""
+      <div class="ap-view" data-ap-view="approve">{queue_html}
+      </div>"""
+    elif mode == "auto":
         auto_queue = ""
         if swaps:
             rows = "".join(
@@ -550,12 +749,8 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
             auto_queue = f"""
       <p class="ap-card-sub" style="margin:10px 0 2px"><b style="color:var(--text)">Queued for the next run:</b></p>{rows}"""
         mode_view = f"""
+      <div class="ap-view" data-ap-view="auto">
       <p class="ap-card-sub" style="margin-bottom:10px"><b style="color:var(--text)">Auto is on. Full autonomy, inside the guardrails below.</b> Plans execute on schedule with no approval step. You get a push and an email after every executed move.</p>
-      <div class="ap-autonext">
-        <div class="ap-autonext-lab">Next execution</div>
-        <div class="ap-autonext-main">Thursday evening lineup check &middot; executes automatically</div>
-        <div class="ap-autonext-sub">Then Sunday, 12:30 PM ET final check.</div>
-      </div>
       <div class="ap-sumrow"><span>Lineup executions</span><b>Automatic, Thu and Sun runs</b></div>
       <div class="ap-sumrow"><span>Scope</span><b>{'Problem slots only' if settings.get('problem_slots_only') else 'Full optimal lineup'}</b></div>
       <div class="ap-sumrow"><span>Protected players</span><b>Never benched, never dropped</b></div>
@@ -563,9 +758,12 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
       <div class="ap-sumrow"><span>Waivers</span><b>Not included yet. Lineups only for now.</b></div>
       {auto_queue}
       <div class="ap-actions">
-        <button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="1">Pause Autopilot</button>
+        <button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="{'0' if paused else '1'}" data-label-pause="Pause Autopilot" data-label-resume="Resume Autopilot">{'Resume Autopilot' if paused else 'Pause Autopilot'}</button>
         <span class="ap-flash" role="status"></span>
+      </div>
       </div>"""
+    else:
+        mode_view = ""
 
     hero_sub = (
         "Runs the lineup moves BR already recommends, on your ESPN account, "
@@ -585,9 +783,13 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
       </div>
       <span class="ap-pill"><span class="ap-dot"></span>ESPN: writes proven</span>
     </div>
+    <div id="apModeRegion">
     {banners}
     {seg}
+    {next_run_bar}
+    {off_view}
     {mode_view}
+    </div>
   </section>"""
 
     # --- Guardrails ---------------------------------------------------------
@@ -599,9 +801,11 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
         )
 
     pause_btn = (
-        '<button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="0">Resume</button>'
+        '<button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="0" '
+        'data-label-pause="Pause" data-label-resume="Resume">Resume</button>'
         if paused else
-        '<button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="1">Pause</button>'
+        '<button class="ap-btn ap-btn-ghost" type="button" data-ap-pause="1" '
+        'data-label-pause="Pause" data-label-resume="Resume">Pause</button>'
     )
     guardrails = f"""
   <section class="ap-card" aria-label="Guardrails">
@@ -657,7 +861,7 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
             "executions, and skips will land here.</p>"
         )
     schedule = f"""
-  <section class="ap-card" aria-label="Schedule and activity">
+  <section class="ap-card" id="apActivity" aria-label="Schedule and activity">
     <div class="ap-grid2">
       <div>
         <h2 class="ap-h2">Next runs</h2>
@@ -677,7 +881,7 @@ def build_autopilot_body(platform: str, season: int, league_id: str,
     protected_json = html.escape(json.dumps(protected_ids), quote=True)
     js = _JS.replace("__AP_CHECK__", json.dumps(_CHECK_SVG))
     body = f"""
-<div class="ap-wrap" id="apRoot" data-ap-platform="{e(str(platform))}" data-ap-season="{int(season)}" data-ap-league="{e(str(league_id))}" data-ap-roster="{roster_json}" data-ap-protected="{protected_json}">
+<div class="ap-wrap" id="apRoot" data-ap-platform="{e(str(platform))}" data-ap-season="{int(season)}" data-ap-league="{e(str(league_id))}" data-ap-mode="{e(mode)}" data-ap-roster="{roster_json}" data-ap-protected="{protected_json}">
 <style>{_CSS}</style>
 {hero}
 {guardrails}
