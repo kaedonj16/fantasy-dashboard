@@ -46,14 +46,18 @@ from test_prospect_v32 import SMITH
 
 
 class TestVersion:
-    def test_model_version_is_312(self):
-        assert pm.MODEL_VERSION == "3.12"
+    def test_model_version_is_313(self):
+        # 3.13 re-pin (was test_model_version_is_312).
+        assert pm.MODEL_VERSION == "3.13"
 
     def test_rb2b_cfgs(self):
         assert pm.PROD_EVIDENCE_CFG["release_min_price"] == 0.0
+        # 3.13: TE joins RB on the corroboration release (L4)
+        # and on the peak min-weight (L6).
         assert pm.PROD_EVIDENCE_CFG["release_min_price_by_pos"] == {
-            "RB": 55.0}
-        assert pm.BLEND_CFG["peak_min_weight_by_pos"] == {"RB": 0.02}
+            "RB": 55.0, "TE": 55.0}
+        assert pm.BLEND_CFG["peak_min_weight_by_pos"] == {
+            "RB": 0.02, "TE": 0.02}
         assert pm.RB_RECEIVING_WEIGHT == pytest.approx(0.08)
         assert pm.RB_RECEIVING_MIN_PRICE == pytest.approx(50.0)
         assert pm.RB2B_FUND == {"utilization": -0.04, "age": -0.02,

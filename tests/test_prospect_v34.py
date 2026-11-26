@@ -369,8 +369,15 @@ class TestPanelReproduction:
         # durability already prices the absence and is
         # unchanged. In-season stays 75.08: the drop never
         # fires on the in-progress season.
-        assert complete["prospect_score"] == 76.12
-        assert inseason["prospect_score"] == 75.08
+        # v3.13 (Phase 7, L1): complete -> 77.14, in-season ->
+        # 75.46. His fixture carries no stored targets, so the
+        # v3.2 assembly gate popped his utilization leg
+        # entirely (the priced list had 7 legs); the leg now
+        # prices from the receptions proxy at 83.33 and enters
+        # the blend, and production rises 43.59 -> 45.58 on
+        # the Phase 4 OR-gate / stretch path.
+        assert complete["prospect_score"] == 77.14
+        assert inseason["prospect_score"] == 75.46
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44

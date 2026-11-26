@@ -173,7 +173,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"
 
 
 class TestCapitalInvariance:
@@ -221,7 +221,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.12"
+        assert r["model_version"] == "3.13"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -298,7 +298,9 @@ class TestPanelGrades:
         # v3.11 round 5: complete -> 76.12 (production 42.90 ->
         # 43.59: the 3-GP 2026 leaves the blend in complete
         # mode; see test_prospect_v34 for the split).
-        assert complete["prospect_score"] == 76.12
+        # v3.13 (Phase 7, L1): -> 77.14; his targets-absent
+        # utilization leg prices again (see test_prospect_v34).
+        assert complete["prospect_score"] == 77.14
         # v3.9: 73.77 -> 74.17. At this pinned clock (Oct 19) the
         # season is 6 team games old, above his 3 GP, so the shrink
         # factor doubles (3/12 -> 6/12); see test_prospect_v34 for
@@ -310,7 +312,8 @@ class TestPanelGrades:
         # v3.11 round 3: -> 75.08. TE efficiency's best-season
         # pricing moves only his in-season read (efficiency
         # 94.51 -> 95.50; see test_prospect_v34 for the split).
-        assert inseason["prospect_score"] == 75.08
+        # v3.13 (Phase 7, L1): -> 75.46 (same mechanism).
+        assert inseason["prospect_score"] == 75.46
 
     def test_panel_ordering_unchanged_by_the_fold(self):
         # The round-3 audit panel order (Smith > Mestemaker > Green

@@ -390,4 +390,4 @@ class TestCompetitionDiscount:
 
 class TestVersion:
     def test_model_version_is_39(self):
-        assert pm.MODEL_VERSION == "3.12"
+        assert pm.MODEL_VERSION == "3.13"
