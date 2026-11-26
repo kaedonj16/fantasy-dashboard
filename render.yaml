@@ -294,13 +294,18 @@ services:
   - type: cron
     name: autopilot-thu
     runtime: python
-    # Autopilot scheduler, Thursday pass: plans build (and Auto leagues
-    # execute) ahead of the Thursday night game. Render cron schedules
-    # are UTC; with TZ America/New_York this is Thu 19:00 EST / 20:00
-    # EDT. Hits the web service so ESPN credentials stay on the app;
-    # trigger_autopilot.py is stdlib urllib only.
+    # Autopilot scheduler, Thursday-evening pass: plans build (and Auto
+    # leagues execute) ahead of the Thursday night game. Render cron
+    # schedules are UTC; with TZ America/New_York this is Thu 19:00 EST
+    # / 20:00 EDT. Hits the web service so ESPN credentials stay on the
+    # app; trigger_autopilot.py is stdlib urllib only.
     # NOTE: cron auto-deploy is OFF under the 2026-11 cost cut, so this
     # service must be deployed manually in Render before it runs.
+    # Schedule-aware note: run windows are derived from the week's real
+    # slate in dashboard_services/autopilot_schedule.py and the cron
+    # endpoint due-gates every firing, so the four autopilot services
+    # below are candidate trigger times only; firings that find no
+    # window due (or a window already served) are cheap no-ops.
     schedule: 0 0 * * 5
     plan: starter
     buildCommand: python -c "print('autopilot - no Python deps')"
@@ -322,9 +327,63 @@ services:
     runtime: python
     # Autopilot scheduler, Sunday pass: final plan + Auto execution
     # before the early slate locks. Render cron schedules are UTC;
-    # this is Sun 12:30 EDT / 11:30 EST. Same manual-deploy note as
-    # autopilot-thu (cron auto-deploy OFF under the cost cut).
+    # this is Sun 12:30 EDT / 11:30 EST. Same manual-deploy note and
+    # schedule-aware note as autopilot-thu.
     schedule: 30 16 * * 0
+    plan: starter
+    buildCommand: python -c "print('autopilot - no Python deps')"
+    startCommand: python scripts/trigger_autopilot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
+    name: autopilot-slate
+    runtime: python
+    # Autopilot scheduler, weekday slate specials (candidate triggers;
+    # the endpoint due-gates, so most firings no-op). Hours are UTC and
+    # bracket both Eastern regimes for the slate-derived windows:
+    # Wed-evening games (Thanksgiving week, 19:00 ET window), the
+    # Thanksgiving Thursday 12:00 ET window ahead of the 13:00 kickoff,
+    # Black Friday / Christmas-week Friday afternoon windows (14:00 ET
+    # ahead of 15:00-style kickoffs, plus Friday-evening coverage).
+    # Days 3,4,5 = Wed, Thu, Fri UTC. Same manual-deploy note as
+    # autopilot-thu (cron auto-deploy OFF under the cost cut).
+    schedule: 0 0,16,17,18,19,23 * * 3,4,5
+    plan: starter
+    buildCommand: python -c "print('autopilot - no Python deps')"
+    startCommand: python scripts/trigger_autopilot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: TZ
+        value: America/New_York
+      - key: PYTHON_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
+  - type: cron
+    name: autopilot-slate-weekend
+    runtime: python
+    # Autopilot scheduler, weekend slate specials (candidate triggers;
+    # the endpoint due-gates, so most firings no-op). Hours are UTC and
+    # bracket both Eastern regimes for: international Sunday games
+    # (08:30 ET window ahead of 09:30 kickoffs, 12:30/13:30 UTC),
+    # late-season Saturday windows (12:00 ET and 19:15 ET ahead of
+    # Saturday slates). Days 0,6 = Sun, Sat UTC. Same manual-deploy
+    # note as autopilot-thu (cron auto-deploy OFF under the cost cut).
+    schedule: 0,15,30 0,12,13,16,17,23 * * 0,6
     plan: starter
     buildCommand: python -c "print('autopilot - no Python deps')"
     startCommand: python scripts/trigger_autopilot.py

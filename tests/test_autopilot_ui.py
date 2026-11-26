@@ -606,6 +606,10 @@ def _run_scheduler(env, monkeypatch):
         for s in env["conn"].settings.values() if s["mode"] != "off"
     ]
     monkeypatch.setattr(autopilot_schedule, "_candidate_leagues", lambda: rows)
+    # No slate in these tests: the due gate fails open and every
+    # candidate runs, which is the routing behavior under test here.
+    # Slate gating has its own fixture suite.
+    monkeypatch.setattr(autopilot_schedule, "_schedule_rows", lambda: [])
     return autopilot_schedule.run_scheduled_runs(
         transport_factory=lambda *a: FakeTransport())
 

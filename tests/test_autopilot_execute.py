@@ -126,6 +126,10 @@ def harness(monkeypatch):
         lambda *a: {"espn_s2": "s2", "swid": SWID})
     monkeypatch.setattr(autopilot_preview, "autopilot_access",
                         lambda *a: h["access"])
+    # No schedule locks unless a test installs a fixture slate.
+    monkeypatch.setattr(
+        "dashboard_services.autopilot_schedule.schedule_locked_teams",
+        lambda *a, **k: set())
     monkeypatch.setattr(store, "get_settings", lambda *a: dict(h["settings"]))
     monkeypatch.setattr(store, "get_kill_switch", lambda *a: h["kill"])
     monkeypatch.setattr(store, "get_plan", lambda pid: h["plan"])

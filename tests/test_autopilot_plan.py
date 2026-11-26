@@ -150,6 +150,11 @@ def harness(monkeypatch):
         lambda season, week, scoring, pids: {
             p: h["bundles"][p] for p in pids if p in h["bundles"]})
     monkeypatch.setattr(plan_mod, "_def_rank", lambda *a: (None, 32))
+    # No schedule locks unless a test installs a fixture slate: the
+    # plan builder's slate source is the real nflverse file otherwise.
+    monkeypatch.setattr(
+        "dashboard_services.autopilot_schedule.schedule_locked_teams",
+        lambda *a, **k: set())
     monkeypatch.setattr(store, "get_settings", lambda *a: dict(h["settings"]))
     monkeypatch.setattr(store, "get_kill_switch", lambda *a: h["kill"])
 
