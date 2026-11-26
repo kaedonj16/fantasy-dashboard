@@ -135,6 +135,37 @@ def test_standings_mini_top4_plus_viewer_with_expand():
     assert ".cc-st-card:not(.dash-st-expanded) .dash-st-extra" in block
 
 
+def test_jump_bar_is_a_floating_card_with_pill_chips():
+    block = _mobile_reorg_block(_css())
+    nav_bodies = re.findall(r"\.dash-jump-nav\s*\{([^}]+)\}", block)
+    body = next((b for b in nav_bodies if "display: flex" in b), "")
+    assert body, "jump bar rule must live in the mobile reorg block"
+    # Floating card chrome, matching .os-card: card surface, hairline
+    # border, the card radius token and the small card shadow. Never a
+    # full-bleed square strip: no width:100%, no bottom-only border.
+    assert "background: var(--card)" in body
+    assert "border: 1px solid var(--border)" in body
+    assert "border-radius: var(--radius)" in body
+    assert "box-shadow: var(--shadow-sm)" in body
+    assert "border-bottom" not in body
+    assert "width: 100%" not in body
+    assert "position: sticky" in body
+    # Chips are true pills. 99px is the site's sanctioned pill radius;
+    # the four-digit stadium radius is banned site-wide by the audit.
+    chip = re.search(r"\.dash-jump-chip\s*\{([^}]+)\}", block)
+    assert chip and "border-radius: 99px" in chip.group(1)
+    assert "border-radius: 999" not in block
+    # The label is a fixed item outside the scrolling chip track:
+    # markup order is label first, then the track, and the label rule
+    # keeps it flex-none while the track owns the horizontal scroll.
+    src = _page()
+    assert src.index("dash-jump-label") < src.index("dash-jump-track")
+    label = re.search(r"\.dash-jump-label\s*\{([^}]+)\}", block)
+    assert label and "flex: 0 0 auto" in label.group(1)
+    track = re.search(r"\.dash-jump-track\s*\{([^}]+)\}", block)
+    assert track and "overflow-x: auto" in track.group(1)
+
+
 def test_no_autopilot_or_invented_nav_in_hybrid_surfaces():
     src = _page()
     tools = src[src.index("_tool_defs = ["):src.index("_tiles = []")]

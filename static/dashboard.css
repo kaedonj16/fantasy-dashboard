@@ -57304,25 +57304,34 @@ body.td-lock .br-asst-bubble {
   .os-layout .dash-jump-nav { order: 2; }
   .os-layout .dash-tools-card { order: 4; }
 
-  /* Jump to bar: sticky under the signed-in top chrome, one scrollable
-     row of chips, solid ground with a hairline so sections pass under
-     it cleanly. */
+  /* Jump to bar: a floating card like the rest of the dashboard, not a
+     full-bleed strip. It sits in the same layout flow as the cards (so
+     it inherits their gutter), carries the card chrome (var(--card)
+     surface, var(--border), var(--radius), var(--shadow-sm) from
+     .os-card), and stays a floating card when stuck under the top
+     chrome, with a small gap above it like the floating dock. The
+     label is a fixed flex item outside the scrolling chip track, with
+     the bar's own padding on its left, so it is never clipped. */
   .dash-jump-nav {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
+    box-sizing: border-box;
+    width: auto;
     max-width: none;
     flex-shrink: 0;
     position: sticky;
-    top: calc(58px + env(safe-area-inset-top));
+    top: calc(64px + env(safe-area-inset-top));
     z-index: 40;
-    padding: 8px 0;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
+    padding: 8px 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
   }
   .dash-jump-label {
     flex: 0 0 auto;
+    padding-left: 2px;
     font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -57348,9 +57357,12 @@ body.td-lock .br-asst-bubble {
     align-items: center;
     gap: 5px;
     min-height: 36px;
-    padding: 6px 12px;
+    padding: 6px 14px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
+    /* True pill: 99px is the site's sanctioned pill radius (the
+       four-digit stadium radius is banned site-wide); on a 36px chip
+       it renders fully round. */
+    border-radius: 99px;
     background: var(--card);
     color: var(--text);
     font-size: 12.5px;
@@ -57367,7 +57379,7 @@ body.td-lock .br-asst-bubble {
   .dash-jump-count {
     background: var(--accent);
     color: #fff;
-    border-radius: var(--radius-pill);
+    border-radius: 99px;
     font-size: 10px;
     font-weight: 800;
     padding: 1px 6px;
@@ -57381,7 +57393,7 @@ body.td-lock .br-asst-bubble {
   .os-layout #os-jump-actions,
   .os-layout #os-jump-report-card,
   .os-layout #dashInjuryWatch {
-    scroll-margin-top: calc(118px + env(safe-area-inset-top));
+    scroll-margin-top: calc(124px + env(safe-area-inset-top));
   }
 
   /* Tools grid: two columns of real-tool tiles, label and nav icon
