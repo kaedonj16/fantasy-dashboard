@@ -3027,6 +3027,23 @@
         var lo = Math.min(x1, x2), hi = Math.max(x1, x2);
         var L = Math.max(9.5, lo - (k === 0 ? 0 : 0.5));
         var W = Math.min(90.5, hi + 0.5) - L;
+        if (drive.kinds && drive.kinds[k] === 'pass') {
+          // Pass depth, mirroring the shared renderer: the segment
+          // lifts off the plane as a dotted arc from the throw spot to
+          // the play's END spot (no catch point), over a soft shadow.
+          var span = Math.abs(x2 - x1);
+          var arcLift = Math.min(42, 14 + span * 1.1);
+          var nDots = Math.max(4, Math.min(14, Math.round(span / 1.6)));
+          var arcNew = (fbAnim && k === n - 1) ? ' is-new' : '';
+          trail += '<span class="rz-fb-arcshadow" style="left:' + ((lo + hi) / 2 - span * 0.35) + '%;width:' + (span * 0.7) + '%"></span>';
+          for (var di = 1; di < nDots; di++) {
+            var fr = di / nDots;
+            var ax = x1 + (x2 - x1) * fr;
+            var ay = 50 - arcLift * 4 * fr * (1 - fr);
+            trail += '<span class="rz-fb-arcdot' + arcNew + '" style="left:' + ax.toFixed(2) + '%;top:' + ay.toFixed(2) + '%"></span>';
+          }
+          continue;
+        }
         var segCls = 'rz-fb-seg';
         if (fbAnim && k === n - 1) segCls += ' rz-fb-seg-new ' + (x2 > x1 ? 'is-fwd' : 'is-back');
         trail += '<span class="' + segCls + '" style="left:' + L + '%;width:' + W + '%;height:'
@@ -3046,9 +3063,14 @@
     var flag = '<span class="rz-fb-flag" style="left:' + flagX + '%' + pillInk + '">' + spotLabel + '</span>';
     var chipHtml = (drive && drive.chip)
       ? '<span class="rz-fb-chip" style="left:' + flagX + '%' + pillInk + '">' + drive.chip + '</span>' : '';
-    var labels = [[20, '20'], [40, '40'], [50, '50'], [60, '40'], [80, '20']].map(function(p) {
+    var labels = [[20, '20'], [50, '50'], [80, '20']].map(function(p) {
       return '<span style="left:' + xOf(p[0]) + '%">' + p[1] + '</span>';
     }).join('');
+    // Goal posts, mirroring the shared renderer (dashboard.css anchors
+    // them to the projected trapezoid behind each end zone).
+    var postPath = '<path d="M7 3v20c0 5 4 9 9 9s9-4 9-9V3M16 32v24" fill="none" stroke="#e8a90c" stroke-width="3.4" stroke-linecap="round"/>';
+    var posts = '<svg class="rz-fb-post rz-fb-post-l" viewBox="0 0 32 60" aria-hidden="true">' + postPath + '</svg>'
+      + '<svg class="rz-fb-post rz-fb-post-r" viewBox="0 0 32 60" aria-hidden="true">' + postPath + '</svg>';
     var driveRow = '';
     if (drive) {
       driveRow = '<div class="rz-fb-drive"><span class="rz-fb-live"><span class="rz-fb-live-dot"></span>LIVE DRIVE</span>'
@@ -3074,13 +3096,15 @@
         tdHtml += '<span class="rz-fb-td"' + (pillInk ? ' style="' + pillInk.slice(1) + '"' : '') + '>TOUCHDOWN</span>';
       }
     }
-    return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + aria + '">'
+    return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-stage">'
+      + posts
+      + '<div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + aria + '">'
       + '<span class="rz-fb-ez" style="left:0;background:' + tint(_FB_COLORS[away] || '#334155') + '"><span>' + away + '</span></span>'
       + '<span class="rz-fb-ez" style="right:0;background:' + tint(_FB_COLORS[home] || '#334155') + '"><span>' + home + '</span></span>'
       + shade + trail + fd + flag
       + '<span class="rz-fb-ball" style="left:' + ballX + '%' + (fbAnim ? ';--rz-fb-ball-from:' + xOf(fbAnim.fromAbs) + '%' : '') + '"></span>'
       + chipHtml + tdHtml
-      + '</div></div>'
+      + '</div></div></div>'
       + driveRow
       + '<div class="rz-field-scale">' + labels + '</div></div>';
   }

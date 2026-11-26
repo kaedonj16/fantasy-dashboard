@@ -564,7 +564,14 @@ def test_field_board_is_scorezone_only_and_falls_back_to_the_bar():
     # Presentation contract (approved mock): perspective field, uniform dots,
     # the first-down line is the only yellow.
     assert ".rz-fb-field {" in DASHBOARD_CSS
-    assert "rotateX(22deg)" in DASHBOARD_CSS
+    # Trapezoid redesign (2026-11-26): the plane lays back at 49deg on a
+    # 620px perspective, goal posts stand behind each end zone, passes
+    # lift off the plane as dotted arcs, and the scale drops its 40s.
+    assert "rotateX(49deg)" in DASHBOARD_CSS
+    assert "perspective: 620px" in DASHBOARD_CSS
+    assert ".rz-fb-post {" in DASHBOARD_CSS and ".rz-fb-arcdot {" in DASHBOARD_CSS
+    assert "rz-fb-post-l" in app_js and "rz-fb-post-l" in SCOREZONE_JS
+    assert "rz-fb-arcdot" in app_js and "rz-fb-arcdot" in SCOREZONE_JS
     assert ".rz-fb-dot {" in DASHBOARD_CSS
     assert "width: 7px; height: 7px" in DASHBOARD_CSS
     assert ".rz-fb-ball {" in DASHBOARD_CSS
@@ -653,6 +660,13 @@ console.log(JSON.stringify({{drive: drive, neg: neg, sack: sack, mixed: mixed, n
     assert "rz-fb-field" in fb and fb.count("rz-fb-dot") == 3
     # The mock drive's one pass play renders the hollow cue dot.
     assert fb.count("rz-fb-dot is-pass") == 1
+    # Trapezoid redesign: one post behind each end zone, the pass segment
+    # lifted as a dotted arc (runs keep their ground segments, so exactly
+    # two rz-fb-seg spans), and no 40s left on the yard scale.
+    assert fb.count("rz-fb-post-l") == 1 and fb.count("rz-fb-post-r") == 1
+    assert "rz-fb-arcdot" in fb and "rz-fb-arcshadow" in fb
+    assert fb.count('class="rz-fb-seg"') == 2
+    assert ">40<" not in fb
     assert "LIVE DRIVE" in fb and "3 plays" in fb and "24 yds" in fb
     assert "started CAR 12" in fb and "+4 run" in fb and ">CAR 36<" in fb
     # The field-board centre line is down & distance only; the flag owns the spot.
