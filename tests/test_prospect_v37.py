@@ -173,7 +173,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.11"
+        assert pm.MODEL_VERSION == "3.12"
 
 
 class TestCapitalInvariance:
@@ -221,7 +221,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.11"
+        assert r["model_version"] == "3.12"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and

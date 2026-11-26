@@ -221,7 +221,7 @@ class TestEndToEnd:
 
 class TestVersion:
     def test_model_version_is_311(self):
-        assert pm.MODEL_VERSION == "3.11"
+        assert pm.MODEL_VERSION == "3.12"
 
     def test_shipped_revision_cfgs(self):
         # The 3.11 revision (Kaedon's three calibration flags):
@@ -527,8 +527,15 @@ class TestTrimForgivesAbsenceNotWeakness:
 
     def test_measured_split_backfield_is_not_forgiven(self):
         # Three featured seasons, elite rates, a split share:
-        # utilization (51.2) is a measurement, so the shipped
-        # block keeps it in the mean and the grade falls ~1.
+        # utilization is a measurement, so the shipped block
+        # keeps it in the mean. Under 3.11 that cost the grade
+        # ~1 against the block-off arm. Under 3.12 the fixture's
+        # production is corroboration-capped (79.4) and its
+        # production-anchored peak (79.9) no longer clears the
+        # 88 trim gate, so the trim never fires in either arm
+        # and the grades coincide; the block's blend-level pin
+        # (blocked < unblocked when the trim fires) lives in
+        # test_prospect_v312.
         on = pm.score_prospect(copy.deepcopy(SPLIT_RB), None,
                                skip_sagarin=True)
         off = _score_with(SPLIT_RB, "TRIM_MEASURED_CFG",
@@ -536,7 +543,8 @@ class TestTrimForgivesAbsenceNotWeakness:
         assert on["utilization_score"] == pytest.approx(
             off["utilization_score"], abs=0.01)
         assert on["utilization_score"] < 60.0
-        assert on["prospect_score"] < off["prospect_score"] - 0.5
+        assert on["prospect_score"] == pytest.approx(
+            off["prospect_score"], abs=0.01)
 
     def test_no_featured_season_block_is_inert(self):
         # Never featured (every season under the role floors):
@@ -1461,8 +1469,12 @@ class TestTrimDropFloor:
                 legs, "RB", trim_block=("utilization",))
         finally:
             pm.BLEND_CFG = saved
-        assert floored == pytest.approx(88.27, abs=0.1)
-        assert unfloored == pytest.approx(90.97, abs=0.1)
+        # 3.12 re-pin: the peak min-weight (0.02) now keeps the
+        # durability 100 (weight 0.0063) out of the peak set in
+        # BOTH arms, so both read lower than the 3.11 pins
+        # (88.27 / 90.97); the floor gap is what this test pins.
+        assert floored == pytest.approx(84.55, abs=0.1)
+        assert unfloored == pytest.approx(87.26, abs=0.1)
         assert floored < unfloored - 2.0
 
     def test_weak_box_above_the_floor_still_drops(self):
@@ -1662,10 +1674,16 @@ class TestRound9Machinery:
                  "rush_tds": 2, "receptions": 5,
                  "receiving_yards": 40, "targets": 8}
         seasons = [small, big]
-        # Presence release (default): two featured seasons
-        # release the spike untouched.
+        # 3.11's default was presence release (two featured
+        # seasons release the spike untouched). v3.12 ships the
+        # corroboration-priced release at RB by default
+        # (release_min_price_by_pos RB = 55), and this small
+        # season prices below it, so the cap binds at the
+        # shipped dose: 75 + (95 - 75) * 0.25 = 80. Presence
+        # release remains the default at the other positions
+        # (pinned in test_prospect_v312).
         assert pm._production_evidence_cap(
-            95.0, seasons, "RB", 21.0, 2023, True) == 95.0
+            95.0, seasons, "RB", 21.0, 2023, True) == 80.0
         saved = dict(pm.PROD_EVIDENCE_CFG)
         try:
             pm.PROD_EVIDENCE_CFG["release_min_price"] = 90.0
