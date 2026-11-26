@@ -187,7 +187,15 @@ class TestFloorRedistribution:
         # breakout leg 88.97 -> 93.41 (the bent dom curve on his
         # peak ratio and the draft-anchored breakout age); every
         # other leg unchanged.
-        assert out["prospect_score"] == 94.24
+        # v3.11 (peak share 0.74 + gated trim): -> 94.35. The
+        # +0.11 is the peak share alone - his softest leg
+        # (competition 94.55) is far above the trim's 75 ceiling,
+        # so nothing is forgiven; uniform-elite profiles barely
+        # move by design.
+        # v3.11 round 6: -> 94.66 (step C1's rate key reprices
+        # his production anchor +0.31; steps A/B do not touch
+        # him - S14).
+        assert out["prospect_score"] == 94.66
 
     def test_inseason_suppresses_floor_and_redistributes(self):
         out = _score(SMITH, _dc("WR", 2), _active_season_year=2026)
@@ -214,7 +222,8 @@ class TestFloorRedistribution:
         # v3.10: -> 90.48 (the same breakout-leg move as complete
         # mode, 88.97 -> 93.41, worth more here because the shrunk
         # legs raise breakout's effective share of the blend).
-        assert out["prospect_score"] == 90.48
+        # v3.11: -> 90.76 (the 0.74 peak share on the same legs).
+        assert out["prospect_score"] == 90.76
         # GP 7 confidence discount: round(20 * (1 - 7/12)) = 8.
         # v3.7: 62.0 -> 47.0. The 15-point drop is the removed
         # capital-presence confidence (+10 for a mock-backed pick,
@@ -260,8 +269,19 @@ class TestFloorRedistribution:
         # v3.9 (ceiling redesign): -> 86.09 / 85.27. QBs take the
         # smaller peak share (0.30): his top legs (production,
         # age) still lift him ~+1.3 over the mean blend.
-        assert complete["prospect_score"] == 86.09
-        assert inseason["prospect_score"] == 85.27
+        # v3.11: -> 87.41 complete / 85.27 in-season. The QB peak
+        # share is unchanged, so the complete-mode +1.32 is the
+        # gated trim alone: it forgives his weakest box
+        # (competition 69.09, priced at North Texas) - the spiky
+        # case the trim exists for. In-season his shrunk legs
+        # keep the peak set under the 88 gate, so no forgiveness
+        # fires and the grade is byte-identical.
+        # v3.11 round 6: -> 85.90 complete / 85.13 in-season
+        # (step A alone in both modes: his utilization was
+        # peak-resident; steps B/C1 net zero on his profile -
+        # S14).
+        assert complete["prospect_score"] == 85.90
+        assert inseason["prospect_score"] == 85.13
         assert complete["confidence_score"] == 45.0
         assert inseason["confidence_score"] == 33.0  # GP 5: discount 12
 
@@ -334,8 +354,23 @@ class TestPanelReproduction:
         # saturation made TE's slope the shallowest - plus the
         # draft-anchored breakout age; the same leg move flows
         # through the in-season read at nearly the same size).
-        assert complete["prospect_score"] == 75.87
-        assert inseason["prospect_score"] == 74.93
+        # v3.11: -> 75.86 complete / 74.88 in-season. His peak
+        # prices a hair under his mean, so the higher peak share
+        # costs cents, and no leg is weak enough to trim.
+        # v3.11 round 3: in-season -> 75.08 (complete unchanged).
+        # TE efficiency now prices best-season like production:
+        # his in-progress 2026 input shrinks toward the best
+        # completed read inside the blend instead of the whole
+        # leg shrinking afterward - efficiency 94.51 -> 95.50,
+        # every other leg identical.
+        # v3.11 round 5: complete -> 76.12 (production 42.90 ->
+        # 43.59). In complete mode his 3-GP 2026 is a finished
+        # availability season and leaves the production blend;
+        # durability already prices the absence and is
+        # unchanged. In-season stays 75.08: the drop never
+        # fires on the in-progress season.
+        assert complete["prospect_score"] == 76.12
+        assert inseason["prospect_score"] == 75.08
         # All of Green's seasons are role seasons (13+ receptions):
         # the durability role rule does not touch him.
         assert complete["durability_score"] == 69.44
@@ -353,8 +388,13 @@ class TestPanelReproduction:
         # weights (QB age's doubled effective share, same step as
         # the toggle test) -> 84.78 in v3.8 (M2 production blend,
         # same step as the toggle test) -> 86.09 in v3.9 (ceiling
-        # redesign, same step as the toggle test).
-        assert out["prospect_score"] == 86.09
+        # redesign, same step as the toggle test) -> 87.41 in
+        # v3.11 (the gated trim forgives his competition box,
+        # same step as the toggle test; the durability repair
+        # itself still contributes nothing) -> 85.90 in v3.11
+        # round 6 (step A: utilization peak-residency removed,
+        # same step as the toggle test).
+        assert out["prospect_score"] == 85.90
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his
         # durability is sane; QB durability weight is 0.00, so the

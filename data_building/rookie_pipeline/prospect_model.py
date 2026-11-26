@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.10 (see MODEL_VERSION)
+Model version: 3.11 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.10"
+MODEL_VERSION = "3.11"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -585,6 +585,21 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
     _gp_raw = _safe(season.get("games_played"), 12)
     if _gp_raw < 4:
         _prod = 52.0 + (_prod - 52.0) * (_gp_raw / 4.0)
+    # v3.11 round 10 (discrepancy audit P1): in per-season mode
+    # the crowded-room multiplier prices HERE, on each season's
+    # own depth chart, instead of once on the latest season
+    # after the blend (see DEPTH_CFG). A partial (in-progress)
+    # season is exempt - its room is still forming.
+    if DEPTH_CFG.get("per_season") and not _partial:
+        _prod = _clip(_prod * _depth_multiplier_for_season(season, pos))
+    # v3.11 round 12 (Phase B / discrepancy audit P1, Kaedon's
+    # ruling 2026-11-25): the measured room price (ROOM_CFG)
+    # applies here, on each season's own room aggregates. A
+    # partial (in-progress) season is exempt - its room is
+    # still forming - and a season carrying no aggregates
+    # prices at 1.0 (fail closed, never a penalty).
+    if not _partial:
+        _prod = _clip(_prod * _room_multiplier_for_season(season, pos))
     return _prod
 
 
@@ -724,6 +739,16 @@ def _score_production_season_raw(season: Dict, pos: str, skip_sagarin: bool = Fa
             _scale(tds_pg,        1.5,  2.8) * 0.50
         )
         rush_comp = _scale(rush_yds_pg, 10.0, 85.0)  # 0–100; Lamar ~90+ yd/g → near 100
+        # v3.11 round 8 (QB_PROD_CFG): the rush-TD rate can
+        # enrich the rushing component - goal-line rushing is
+        # workload the yards rate alone understates.
+        _rtd_w = float(QB_PROD_CFG.get("rush_td_weight", 0.0) or 0.0)
+        if _rtd_w > 0.0:
+            _rtd_lo, _rtd_hi = QB_PROD_CFG.get(
+                "rush_td_anchors", (0.1, 1.0))
+            rush_comp = ((1.0 - _rtd_w) * rush_comp + _rtd_w
+                         * _scale(rush_tds_season / gp,
+                                  float(_rtd_lo), float(_rtd_hi)))
 
         # v3.2 R7-A1: max(pass, blend). A perfect passing season is a
         # 100 production season whether or not the QB also ran.
@@ -732,7 +757,31 @@ def _score_production_season_raw(season: Dict, pos: str, skip_sagarin: bool = Fa
         # +3.5/+1.5 rushing add is deleted; a flat add cannot be
         # reproduced through an anchored leg at production's weight,
         # and one anchored price is the audit's requirement.)
-        prod = _clip(max(pass_comp, pass_comp * 0.75 + rush_comp * 0.25))
+        _rshare = float(QB_PROD_CFG.get("rush_share", 0.25))
+        prod = _clip(max(pass_comp,
+                         pass_comp * (1.0 - _rshare)
+                         + rush_comp * _rshare))
+        # v3.11 round 8 (QB_PROD_CFG offense_max): the
+        # total-offense price - the same season's output read
+        # split-blind (see the cfg). A third honest read under
+        # the same max() idiom, not a replacement: the passing
+        # price stands for pocket passers because the anchors
+        # are percentile-matched to theirs.
+        if QB_PROD_CFG.get("offense_max"):
+            _oy_lo, _oy_hi = QB_PROD_CFG.get(
+                "offense_yds", (195.0, 350.0))
+            _ot_lo, _ot_hi = QB_PROD_CFG.get(
+                "offense_tds", (1.7, 3.3))
+            _tot_yds_pg = (_safe(season.get("pass_yards"))
+                           + _safe(season.get("rush_yards"))) / gp
+            _tot_tds_pg = (_safe(season.get("pass_tds"))
+                           + _safe(season.get("rush_tds"))) / gp
+            _off_comp = (
+                _scale(_tot_yds_pg, float(_oy_lo),
+                       float(_oy_hi)) * 0.50
+                + _scale(_tot_tds_pg, float(_ot_lo),
+                         float(_ot_hi)) * 0.50)
+            prod = _clip(max(prod, _off_comp))
 
         # Extra multiplier for elite rushing + TDs (dual-threat upside)
         # v3.4: in-season, the season TD total is paced to a 12-game
@@ -929,6 +978,264 @@ def _production_zero_verdict(score: float, read_seasons: List[Dict],
     return score if recheck < 52.0 else None
 
 
+# v3.11 revision (Kaedon 2026-11-24, the Jameson Williams case):
+# production prices an EVIDENCE BASE, not only a peak. The blend
+# above takes 90% of the best season, so a profile with exactly
+# one featured season carried the same production leg as a
+# profile that sustained the level - one monster year at Alabama
+# priced as the decade's #2 receiver while a two-year elite
+# (Harrison Jr.) priced lower on softer legs elsewhere. The cap
+# limits how much of the leg's SPIKE (the part above
+# spike_level) a single featured season can carry:
+#   capped = spike_level + (prod - spike_level) * spike_keep
+# A second featured season releases the cap in full - sustained
+# excellence is the evidence. So does a single featured season
+# played at an elite-underclassman age (anchored breakout age
+# <= release_age, the breakout leg's own youth zone): a
+# 19-year-old dominating is its own second evidence, which is
+# what keeps the Chase shape (one rotational year, one monster
+# year at 19, opt-out) whole. Nothing here scores a buried or
+# pre-role season AGAINST anyone - the role gate already excused
+# those, and the cap only declines to fully credit an
+# uncorroborated spike (Kaedon's future-outlook doctrine: early
+# low-role seasons are not evidence against a prospect; one
+# featured season is simply less evidence FOR him). Shipped
+# dose: a single featured season carries production to 75 plus
+# a quarter of the spike above it. On the recorded population
+# the cap binds on 14 of 2,265 profiles - one-year air-raid
+# QBs and one-season wonders whose NFL outcomes agreed with
+# the haircut - and the gate improves at every position.
+PROD_EVIDENCE_CFG = {
+    "enabled": True,
+    "spike_level": 75.0,
+    "spike_keep": 0.25,
+    "release_age": 20.0,
+    # v3.11 round 9 (discrepancy audit P2/P4): the two-season
+    # release used to fire on ANY second featured season, so a
+    # committee year (Abanikanda's 98-carry 2021, Hyatt's
+    # 21-catch 2021) fully released a one-season spike. When
+    # positive, release requires the SECOND-best featured
+    # season to itself price at or above this level - a spike
+    # is corroborated by a second season that was itself
+    # good, not merely present. 0.0 = presence release (the
+    # pre-round-9 behavior). Swept in round9_lab.
+    "release_min_price": 0.0,
+}
+
+
+def _production_evidence_cap(prod: float, seasons: List[Dict],
+                             pos: str, age: Optional[float],
+                             draft_year: Optional[int],
+                             skip_sagarin: bool = False) -> float:
+    """Apply the PROD_EVIDENCE_CFG cap to a finished production
+    score. `seasons` is the role-gated list the leg read."""
+    if not PROD_EVIDENCE_CFG.get("enabled") or prod is None:
+        return prod
+    level = float(PROD_EVIDENCE_CFG.get("spike_level", 85.0))
+    if prod <= level:
+        return prod
+    featured = [s for s in seasons if _is_role_season(s, pos)]
+    if len(featured) >= 2:
+        _rmp = float(PROD_EVIDENCE_CFG.get("release_min_price", 0.0))
+        if _rmp <= 0:
+            return prod
+        _prices = sorted(
+            (_score_production_season(s, pos, skip_sagarin)
+             for s in featured),
+            reverse=True)
+        if len(_prices) >= 2 and _prices[1] >= _rmp:
+            return prod
+    if len(featured) == 1 and age is not None:
+        # Youth release: the single featured season was played
+        # at an elite-underclassman age (draft-anchored, the
+        # breakout leg's convention; legacy anchor when no
+        # draft year is supplied).
+        _s_year = _safe(featured[0].get("season"), 0)
+        if _s_year > 0:
+            if draft_year:
+                _age_in = age - (draft_year - _s_year) + 0.45
+            else:
+                _last = max(_safe(s.get("season"), 0) for s in seasons)
+                _age_in = age - (_last - _s_year)
+            if _age_in <= float(PROD_EVIDENCE_CFG.get(
+                    "release_age", 20.0)):
+                return prod
+    keep = float(PROD_EVIDENCE_CFG.get("spike_keep", 0.5))
+    return _clip(level + (prod - level) * keep)
+
+
+# v3.11 round 5 (Kaedon 2026-11-24: "fix the double injury
+# count"): an availability season is charged ONCE. Production
+# prices what a player did WHEN he played (per-game rates);
+# durability prices WHETHER he played. Before this round, a
+# featured season cut short by injury still entered the
+# production blend at the latest-season share - its depressed
+# price dragging the leg - while the durability leg priced the
+# same missed games a second time. The blend now drops the
+# latest-season share when ALL of these hold:
+#   - the latest featured (role-gated) season is an
+#     availability season under this config (a missing GP is
+#     not evidence of absence and never fires);
+#   - it is not the player's best priced season in the blend -
+#     a short season that IS the peak (Pitts' 8-game 2020) is
+#     his best evidence and is never deleted;
+#   - it is not the in-progress season (the F2 shrink already
+#     prices a partial season against the best completed
+#     baseline; a mid-season GP is a calendar fact, not an
+#     availability signal).
+# Production then prices off the best season alone, and
+# durability remains the single availability charge. The
+# threshold was swept on the GP frame (absolute GP <= 8 / 9 /
+# 10 and a team-share mode, GP < 75% of team games): every
+# definition gated within +/- .002 of the round-4 control -
+# the double charge the old frame suggested was already
+# mostly priced away by honest per-game denominators, so the
+# ship is the conservative absolute line with the smallest
+# blast radius and the closest gate, not the line that
+# reaches any one name. The share mode is the purer
+# definition (a 9-of-9 COVID season is not an absence) but
+# season rows carry no team-games field anywhere in the live
+# pipeline, so it would ship as a no-op; it stays in the
+# config for the day that field exists. See the round-5 note
+# (S13 of the ceiling-attainability record).
+PROD_AVAILABILITY_CFG = {
+    "enabled": True,
+    "mode": "gp",
+    "gp_max": 8,
+    "share_max": 0.75,
+}
+
+
+# v3.11 round 6 (step C1): the production blend's peak-season
+# KEY. The blend prices seasons per game, but the completed-
+# season path selected its anchor season on RAW YARDS - so a
+# longer season won the anchor slot on schedule volume and
+# then priced worse per game than a shorter, better season
+# that went unused (the Bowers case, S13.1: 942 yds / 15 GP
+# prices 68.17 and anchors at the 0.9 share; 882 / 14 GP
+# prices 83.05 and is never read). The shipped key is the
+# v3.4 in-season RATE key (totals / max(GP, 12)) with a price
+# tie-break, "rate_price": the anchor is the player's best
+# per-game season, and seasons whose rates sit within the
+# tie band of the best rate - measurement-identical rates -
+# are separated by their full production PRICE, because the
+# price sees the terms the yardage rate cannot (TD rate,
+# dominator). The round-6 sweep (S14) rejected the pure keys
+# on their own evidence: raw yards buries the best season
+# under schedule volume; the pure price canonizes 4-6 game
+# seasons (a 4-game TE season anchoring at 0.9, +35 grade)
+# and costs RB Poor 5.2 -> 6.9; the pure rate hair-flips
+# near-tied seasons whose prices differ by ~50 (the rate is
+# TD-blind); and a GP floor on the anchor - the first fix
+# tried - deletes seasons both other keys agree are the
+# player's best evidence (the Fryfogle case), against the
+# model's own never-delete-the-best-season doctrine. The
+# in-season path is untouched: it already reads the rate key.
+PROD_PEAK_CFG = {
+    "by": "rate_price",
+    "tie_band": 0.01,
+}
+
+
+# v3.11 round 8 (discrepancy audit P3 / S11.4): the QB
+# production season price. Through round 7 the price was the
+# passing volume price with a bounded rushing garnish:
+# max(pass, 0.75 * pass + 0.25 * rush_rate), so a season's
+# rushing output could only ever lift the price toward the
+# passing read, never stand as production in its own right -
+# a dual-threat season whose passing volume was ordinary
+# priced as ordinary production no matter how much offense
+# ran through the QB's legs (the Josh Allen / Lamar Jackson
+# defect family: production 2.41 / 42.87 against outcome
+# ranks #1 / #7; NFL.com missed them too at 6.40, our miss
+# was the same direction at roughly triple the depth).
+# The total-offense price below is the third honest read of
+# the same season: total yards per game and total TDs per
+# game, split-blind - the season produced what it produced,
+# however the yards were divided between arm and legs. Its
+# anchors sit at the same percentile positions of the
+# recorded QB role-season distribution as the passing
+# anchors occupy in theirs (pass 150/285 ~ p15/p82 of pass
+# yards per game; total 195/350 ~ p15/p85 of total yards
+# per game; TDs likewise), so a pure passing season prices
+# the same under either read and the max() form (the R7-A1
+# idiom: a perfect season is a 100 under any honest read)
+# leaves pocket passers untouched. rush_td_weight enriches
+# the rushing component with the rush-TD rate (a workload
+# read: attempts are not in this leg, the TD rate is the
+# goal-line workload signal); 0.0 keeps the pure yards read.
+#
+# SHIPPED DOSE (round 8, S16): rush_share 0.55. The dose
+# sweep on the GP frame: share .25 (the old garnish) ->
+# .35 -> .45 -> .50 -> .55 improves QB Pearson at every
+# step (.3951 -> .3998 -> .4044 -> .4066 -> .4087) with
+# Spearman flat-to-up (.4454 -> .4491) and the QB Poor
+# tier and pool median byte-identical; .65 buys +.004
+# more Pearson at the price of the round's one Poor
+# crossing (Joshua Dobbs 67.94 -> 70.48 in the bottom
+# outcome quintile), so the sweep stops at .55, the last
+# clean dose. At .55 the blend candidate prices a season's
+# rushing output as the near-equal partner of its passing
+# output while the max() form still guarantees a pure
+# passing season its full passing price. Lamar Jackson
+# +7.70 and Jalen Hurts +2.15 on the frame as carried;
+# the two flagship names' remaining distance is a frame
+# data artifact, not dose (see S16.2: their stored GP
+# denominators are corrupt - Allen's 2016 reads GP 27 for
+# a 14-game season - and on corrected denominators Lamar
+# prices 80.81 and Allen's production reads an honest
+# 39.61; the GP repair is data-debt work, not model work).
+# HELD, NOT SHIPPED: offense_max (the total-offense third
+# read) posted the round's best raw gate (P .4099 /
+# S .4548 at share .25, Hurts +3.65, Dak Prescott +2.41)
+# but crossed Dobbs into the Poor tier at every dose -
+# the failure mode this round's brief bars - so it stays
+# behind its flag as Kaedon's ruling. rush_td_weight was
+# inert at every dose (the TD rate never binds beyond the
+# yards read inside a max() at these shares) and stays 0.
+QB_PROD_CFG = {
+    "rush_share": 0.55,
+    "offense_max": False,
+    "offense_yds": (195.0, 350.0),
+    "offense_tds": (1.7, 3.3),
+    "rush_td_weight": 0.0,
+    "rush_td_anchors": (0.1, 1.0),
+}
+
+
+def _production_peak_by_price(seasons, pos, skip_sagarin, default):
+    """(peak_season, best_price): the season whose production
+    PRICE is highest, first such season on ties. Falls back to
+    (default, None) when no season prices."""
+    _bs, _bv = None, None
+    for _s in seasons:
+        _v = _score_production_season(_s, pos, skip_sagarin)
+        if _bv is None or _v > _bv:
+            _bs, _bv = _s, _v
+    if _bs is None:
+        return default, None
+    return _bs, _bv
+
+
+def _is_availability_season(season: Dict) -> bool:
+    """True when the season is an availability season under
+    PROD_AVAILABILITY_CFG: a featured season the player
+    missed a real share of. Missing GP never fires - absence
+    of evidence is not evidence of absence."""
+    if not PROD_AVAILABILITY_CFG.get("enabled"):
+        return False
+    gp = season.get("games_played")
+    if gp is None:
+        return False
+    if PROD_AVAILABILITY_CFG.get("mode") == "share":
+        tg = season.get("team_games")
+        if tg is None or _safe(tg) <= 0:
+            return False
+        return _safe(gp) / _safe(tg) < float(
+            PROD_AVAILABILITY_CFG.get("share_max", 0.75))
+    return _safe(gp) <= float(PROD_AVAILABILITY_CFG.get("gp_max", 10))
+
+
 def calc_production_score(
     seasons: List[Dict],
     position: str,
@@ -937,6 +1244,7 @@ def calc_production_score(
     _inseason_year: Optional[int] = None,
     _draft_year: Optional[int] = None,
     _season_elapsed: Optional[int] = None,
+    _age: Optional[float] = None,
 ) -> Optional[float]:
     """
     Per-game production vs position-specific elite thresholds.
@@ -993,6 +1301,9 @@ def calc_production_score(
                                       elapsed=_season_elapsed)
         if pos == "RB":
             _single = _clip(_single + _rb_receiving_share_credit(seasons))
+        _single = _production_evidence_cap(_single, seasons, pos,
+                                           _age, _draft_year,
+                                           skip_sagarin)
         return _production_zero_verdict(_clip(_single), [ls], pos,
                                         skip_sagarin, all_seasons=seasons,
                                         draft_year=_draft_year)
@@ -1007,22 +1318,51 @@ def calc_production_score(
     # Find best season by primary volume metric per position
     _PEAK_KEY = {"WR": "receiving_yards", "RB": "rush_yards", "QB": "pass_yards", "TE": "receiving_yards"}
     peak_key = _PEAK_KEY[pos]
+    best_score = None
+    # v3.4: the rate key - the 12-game-equivalent rate (totals /
+    # max(GP, 12)). A partial season's calendar-bound totals
+    # cannot lose the peak slot to a longer complete season on
+    # volume alone, and a short season is never inflated: the
+    # denominator floors at 12, so a short season wins only when
+    # its raw total already beats the longer seasons' totals.
+    def _peak_key_fn(s):
+        _g = _safe(s.get("games_played"), 12)
+        _g = _g if _g >= 4 else 12
+        return _safe(s.get(peak_key)) / max(_g, 12)
     if _inseason_year is not None:
-        # v3.4: in-season peak selection uses the 12-game-equivalent
-        # rate (totals / max(GP, 12)) instead of raw totals, so a partial
-        # season's calendar-bound totals cannot lose the peak slot to a
-        # longer complete season on volume alone, and vice versa.
-        def _peak_key_fn(s):
-            _g = _safe(s.get("games_played"), 12)
-            _g = _g if _g >= 4 else 12
-            return _safe(s.get(peak_key)) / max(_g, 12)
         peak_season = max(seasons, key=_peak_key_fn, default=ls)
+    elif PROD_PEAK_CFG.get("by") == "rate":
+        # v3.11 round 6 (step C1): the completed-season path
+        # takes the v3.4 rate key (see PROD_PEAK_CFG).
+        peak_season = max(seasons, key=_peak_key_fn, default=ls)
+    elif PROD_PEAK_CFG.get("by") == "rate_price":
+        # v3.11 round 6 (step C1): the rate key with a price
+        # tie-break - among seasons whose rate is within the
+        # tie band of the best rate, the highest full PRICE
+        # anchors (see PROD_PEAK_CFG).
+        _rates = {id(_s): _peak_key_fn(_s) for _s in seasons}
+        _max_rate = max(_rates.values(), default=0.0)
+        if _max_rate > 0:
+            _band = float(PROD_PEAK_CFG.get("tie_band", 0.025))
+            _tied = [_s for _s in seasons
+                     if _rates[id(_s)] >= _max_rate * (1.0 - _band)]
+            peak_season, best_score = _production_peak_by_price(
+                _tied, pos, skip_sagarin, ls)
+        else:
+            peak_season = max(seasons, key=_peak_key_fn, default=ls)
+    elif PROD_PEAK_CFG.get("by") == "price":
+        # v3.11 round 6 (step C1, PROD_PEAK_CFG): the anchor is
+        # the season with the highest production PRICE, not the
+        # highest raw yardage (see the cfg note).
+        peak_season, best_score = _production_peak_by_price(
+            seasons, pos, skip_sagarin, ls)
     else:
         peak_season = max(seasons, key=lambda s: _safe(s.get(peak_key)), default=ls)
-    best_score = _score_production_season(
-        peak_season, pos, skip_sagarin,
-        _partial=(_inseason_year is not None
-                  and peak_season.get("season") == _inseason_year))
+    if best_score is None:
+        best_score = _score_production_season(
+            peak_season, pos, skip_sagarin,
+            _partial=(_inseason_year is not None
+                      and peak_season.get("season") == _inseason_year))
 
     if _inseason_year is not None:
         # v3.6 (round-2 audit F2): whichever blend input is the
@@ -1055,7 +1395,19 @@ def calc_production_score(
     # role gate in score_prospect (seasons before the first real role
     # are excused from this leg entirely) is the strengthened form of
     # the same principle, added on Kaedon's 2026-11-24 directive.
-    prod = max(latest_score, best_score) * 0.90 + min(latest_score, best_score) * 0.10
+    #
+    # v3.11 round 5: the availability drop (PROD_AVAILABILITY_CFG).
+    # A short latest season that is not the best priced season
+    # leaves the blend entirely - production prices the best
+    # season alone, and durability alone prices the missed
+    # games (one absence, one charge).
+    if (latest_score < best_score
+            and _is_availability_season(ls)
+            and not (_inseason_year is not None
+                     and ls.get("season") == _inseason_year)):
+        prod = best_score
+    else:
+        prod = max(latest_score, best_score) * 0.90 + min(latest_score, best_score) * 0.10
 
     # ── Eval-metric blending ─────────────────────────────────────────────────
     # When evaluation pipeline metrics are available, apply a confidence-weighted
@@ -1129,6 +1481,12 @@ def calc_production_score(
     if pos == "RB":
         prod = _clip(prod + _rb_receiving_share_credit(seasons))
 
+    # v3.11 revision: the evidence-base cap prices the finished
+    # leg (see PROD_EVIDENCE_CFG) - one featured season cannot
+    # carry the full spike.
+    prod = _production_evidence_cap(prod, seasons, pos,
+                                    _age, _draft_year, skip_sagarin)
+
     return _production_zero_verdict(prod, [ls, peak_season], pos,
                                     skip_sagarin, all_seasons=seasons,
                                     draft_year=_draft_year)
@@ -1173,6 +1531,231 @@ def _qb_efficiency_of(season: Dict) -> Optional[float]:
         return None
     wsum = sum(w for _, w in parts)
     return sum(s * w for s, w in parts) / wsum
+
+
+def _te_efficiency_of(season: Dict) -> Optional[float]:
+    """One season's TE efficiency from its rate evidence (v3.11
+    round 3). Yards per reception on the leg's 7.5-14.0 scale,
+    blended 0.625/0.375 with the catch-rate score when the season
+    carries valid targets (targets below receptions is a pipeline
+    failure, not data - v3.2 - and reads as missing); without
+    targets the leg is YPR alone (v3.2/v3.6 F5). A season with no
+    YPR evidence at all returns None."""
+    ypr = _rate(season, "yds_per_reception", "receiving_yards",
+                "receptions")
+    if ypr is None:
+        return None
+    targets = _safe(season.get("targets"))
+    recs = _safe(season.get("receptions"))
+    if targets < recs:
+        targets = 0.0
+    if targets > 0:
+        catch_rate_score = _scale(recs / targets, 0.60, 0.85)
+        return (_scale(ypr, 7.5, 14.0) * 0.625
+                + catch_rate_score * 0.375)
+    return _scale(ypr, 7.5, 14.0)
+
+
+# v3.11 round 4 (Phase B): the RB efficiency leg's rush-quality
+# composite. Round 2's diagnosis (§8.5 of the ceiling note) was
+# that the blend is no longer the RB binding constraint - the
+# YPC-only leg content is: it cannot see the home-run trait
+# (>=20-yd rate) or the stuff rate, the one signal orthogonal to
+# YPC (r = -.27 pooled). When a season carries play-by-play rush
+# rates that pass the coverage gate, the pair's YPC part is
+# replaced by rush_q: the YPC scale plus the >=20 rate, the >=12
+# rate, and the inverted team-contexted stuff rate (the player's
+# stuff rate minus his teammates' att-weighted baseline, so a
+# bad line is not priced as a bad back), at the weights below,
+# renormalized over the terms the season can price. Anchors are
+# the recorded population's pooled quantiles (SportsDataverse
+# ESPN build, >=100-carry rusher-seasons 2015-2023, n=1,337),
+# calibrated once and fixed: exp12/exp20 at the probe note's
+# p10/p90 (0.060/0.165, 0.015/0.080); stuff_ctx at the rebuilt
+# population's p10/p90 (-0.0735/+0.0422 - the contexted
+# distribution is centered below zero because the median
+# workhorse is stuffed less than the teammate mix he is
+# compared against).
+RB_EFF_CFG = {
+    "enabled": True,
+    # Swept on the GP frame (§10 of the ceiling note): the
+    # stuff term carries the composite's new information (it is
+    # the one signal orthogonal to YPC), and the stuff-heaviest
+    # variant gated best on both correlations with the joint-
+    # best Poor rate. The >=20 weight stays at the probe
+    # sketch's 0.20 - heavier variants bought Barkley's leg
+    # points at the price of the gate and of Bijan, which is
+    # fitting weights to names, and the round does not do that.
+    "w_ypc": 0.40,
+    "w_exp20": 0.20,
+    "w_exp12": 0.10,
+    "w_stuff": 0.30,
+    "exp12_lo": 0.060, "exp12_hi": 0.165,
+    "exp20_lo": 0.015, "exp20_hi": 0.080,
+    "stuff_ctx_lo": -0.0735, "stuff_ctx_hi": 0.0422,
+    "min_team_games": 11,
+    "min_att_ratio": 0.90,
+    "min_pbp_att": 100,
+}
+
+
+# v3.11 round 7: the pair form is the pre-rebuild leg - YPC
+# and YPR only, no stuff/explosive content - and on the 502
+# recorded RB seasons that carry BOTH forms it overstates the
+# rush-quality composite by a pooled margin that grows with
+# the print (median delta pair minus composite: +0.2 below
+# 60, +4.5 at 60-75, +8.9 at 75-85, +9.6 at 85+). A season
+# whose play-by-play rates pass the coverage gate prices on
+# the composite; a season with no rates at all prices on the
+# pair - and the PBP build ends at 2023, so exactly the
+# seasons that price the current top of the board can be
+# pair-only (Javonte's 2020, Harvey's 2024). At peak share
+# 0.74 the form gap alone was worth about two grade points
+# up there: pair 100.0 / 96.0 prints sat peak-resident while
+# composite-priced peers printed 70-77 on the same trait.
+# The pair form's excess over the floor is therefore
+# discounted by the pooled share wherever the pair prices -
+# the blend's per-season read and the all-blocked fallback
+# alike - mapping the four pooled bands to within ~2 points
+# of their composite medians (100 -> 86.0, 91 -> 80.2,
+# 80 -> 73.0, 67 -> 64.6). Composite prints are untouched,
+# and the leg-level volume shrink still applies on top.
+EFF_FORM_PARITY_CFG = {
+    "enabled": True,
+    "floor": 60.0,
+    "discount": 0.35,
+}
+
+
+def _rb_pair_value(season: Dict) -> Optional[float]:
+    """One season's box-score RB efficiency - the pre-rebuild
+    leg's per-season read: YPC scale (3.5-7.0) and YPR scale
+    (5.0-12.0) renormalized 0.70/0.30 over whichever rate is
+    measurable; None when neither is (v3.8 M1). Round 7: the
+    returned value carries the pair form's parity discount
+    (EFF_FORM_PARITY_CFG) - this function is the pair value's
+    single choke point, so the blend and the all-blocked
+    fallback price the same read."""
+    _ypc = _rate(season, "yds_per_carry", "rush_yards",
+                 "rush_attempts")
+    _ypr = _rate(season, "yds_per_reception", "receiving_yards",
+                 "receptions")
+    if _ypc is None and _ypr is None:
+        return None
+    _parts = []
+    if _ypc is not None:
+        _parts.append((_scale(_ypc, 3.5, 7.0), 0.70))
+    if _ypr is not None:
+        _parts.append((_scale(_ypr, 5.0, 12.0), 0.30))
+    _w = sum(w for _, w in _parts)
+    _v = sum(s * w for s, w in _parts) / _w
+    # Round 7 (EFF_FORM_PARITY_CFG): the pair form's excess
+    # over the floor is discounted by the pooled pair-vs-
+    # composite share - see the cfg block. Applied here, at
+    # the pair value's single choke point, so every consumer
+    # (the blend's candidates and the all-blocked fallback)
+    # prices the same discounted read.
+    if EFF_FORM_PARITY_CFG.get("enabled") and _v is not None:
+        _fl = float(EFF_FORM_PARITY_CFG.get("floor", 60.0))
+        if _v > _fl:
+            _v -= (_v - _fl) * float(
+                EFF_FORM_PARITY_CFG.get("discount", 0.35))
+    return _v
+
+
+def _rb_efficiency_of(season: Dict):
+    """One season's RB efficiency and the form that priced it:
+    (value, "composite") when the season carries play-by-play
+    rush rates passing the coverage gate; (value, "ypc") for the
+    box-score pair read; (None, "blocked") when the season
+    carries rates that FAIL the gate - it sits out the blend in
+    both forms rather than price on partial data; (None, None)
+    when the season has no rate evidence at all.
+
+    Coverage gate (hard doctrine): the team's season must show
+    >= min_team_games games in the PBP file AND the file's
+    reconstructed attempts must reach min_att_ratio of the
+    season's stored attempts AND the reconstructed sample must
+    reach min_pbp_att carries - the anchors were calibrated on
+    >=100-carry seasons, and a 23-carry sample's rates (Trayone
+    Gray's 2015: exp12 above the top anchor, stuff_ctx below
+    the bottom one) are noise wearing the calibration's
+    clothes; round 2's volume doctrine applied at the gate.
+    Missing gate inputs fail closed -
+    the ESPN feed's whole-game holes (Bijan's Rice 2021 / UTSA
+    2022) are exactly what the gate exists for. Never score
+    missing as zero: a season with no rates at all takes the
+    pair read, and a profile whose candidates all fail the gate
+    falls back to the pre-rebuild leg wholesale (the branch
+    owns that fallback)."""
+    pair = _rb_pair_value(season)
+    if season.get("pbp_rush_att") is None \
+            or not RB_EFF_CFG.get("enabled"):
+        return pair, ("ypc" if pair is not None else None)
+    _tg = season.get("pbp_team_games")
+    _stored_att = _safe(season.get("rush_attempts"))
+    _pbp_att = _safe(season.get("pbp_rush_att"))
+    if _tg is None or _tg < RB_EFF_CFG["min_team_games"] \
+            or _stored_att <= 0 \
+            or _pbp_att < RB_EFF_CFG["min_att_ratio"] * _stored_att \
+            or _pbp_att < float(RB_EFF_CFG.get("min_pbp_att", 0)):
+        return None, "blocked"
+    _terms = []
+    _ypc = _rate(season, "yds_per_carry", "rush_yards",
+                 "rush_attempts")
+    if _ypc is not None:
+        _terms.append((_scale(_ypc, 3.5, 7.0),
+                       float(RB_EFF_CFG["w_ypc"])))
+    if season.get("pbp_exp20_rate") is not None:
+        _terms.append((_scale(_safe(season.get("pbp_exp20_rate")),
+                              float(RB_EFF_CFG["exp20_lo"]),
+                              float(RB_EFF_CFG["exp20_hi"])),
+                       float(RB_EFF_CFG["w_exp20"])))
+    if season.get("pbp_exp12_rate") is not None:
+        _terms.append((_scale(_safe(season.get("pbp_exp12_rate")),
+                              float(RB_EFF_CFG["exp12_lo"]),
+                              float(RB_EFF_CFG["exp12_hi"])),
+                       float(RB_EFF_CFG["w_exp12"])))
+    _ctx = season.get("pbp_stuff_ctx")
+    if _ctx is not None:
+        _terms.append((100.0 - _scale(
+            _safe(_ctx), float(RB_EFF_CFG["stuff_ctx_lo"]),
+            float(RB_EFF_CFG["stuff_ctx_hi"])),
+            float(RB_EFF_CFG["w_stuff"])))
+    if not _terms:
+        return pair, ("ypc" if pair is not None else None)
+    _tw = sum(w for _, w in _terms)
+    rush_q = sum(s * w for s, w in _terms) / _tw
+    _ypr = _rate(season, "yds_per_reception", "receiving_yards",
+                 "receptions")
+    if _ypr is None:
+        return rush_q, "composite"
+    return (rush_q * 0.70 + _scale(_ypr, 5.0, 12.0) * 0.30), \
+        "composite"
+
+
+# v3.11 round 2: volume shrinkage on the RB efficiency leg. The
+# leg prices the latest season's per-play rates on an absolute
+# scale whose top a short season can saturate: Javonte Williams'
+# 100.0 rests on 157 carries in an 11-game season, while Saquon
+# Barkley's 76.1 rests on a 671-carry career - the leg could not
+# tell a proven rate from a sampled one. Above `level`, the leg
+# credits only the evidence-backed share of the excess:
+#   shrunk = level + (raw - level) * n / (n + k)
+# with n the opportunities (rush attempts + receptions) in the
+# priced season. Below the level the print is taken at face
+# value - the shrink never invents signal in either direction,
+# it only declines to fully credit an uncorroborated spike (the
+# production evidence cap's doctrine, with the keep factor set
+# by the sample instead of a constant). It fires only when the
+# priced season carries recorded volume: a stored rate with no
+# counting stats behind it is evidence the leg already accepts
+# (v3.8 M1), and absence of volume data is not a small sample.
+EFF_VOLUME_SHRINK_CFG = {
+    "enabled": True,
+    "level": 85.0,
+    "k": 100.0,
+}
 
 
 def calc_efficiency_score(
@@ -1285,24 +1868,83 @@ def calc_efficiency_score(
                 eff = eff * (1.0 - 0.08 * tprr_conf) + tprr_score * (0.08 * tprr_conf)
 
     elif pos == "RB":
-        # v3.8 (M1): rates from counting stats when the stored rate is
-        # absent; the pair renormalizes over whichever rate is
-        # measurable, and neither measurable means the leg is missing.
-        _ypc_rb = _rate(ls, "yds_per_carry", "rush_yards", "rush_attempts")
-        _ypr_rb = _rate(ls, "yds_per_reception", "receiving_yards",
-                        "receptions")
-        if _ypc_rb is None and _ypr_rb is None:
-            return None
-        _rb_parts = []
-        if _ypc_rb is not None:
-            # v3.6 (round-2 audit F5): market share removed (share is
-            # priced in production/utilization/breakout); the remaining
-            # per-play pair renormalizes to 70/30.
-            _rb_parts.append((_scale(_ypc_rb, 3.5, 7.0), 0.70))
-        if _ypr_rb is not None:
-            _rb_parts.append((_scale(_ypr_rb, 5.0, 12.0), 0.30))
-        _rb_w = sum(w for _, w in _rb_parts)
-        eff = sum(s * w for s, w in _rb_parts) / _rb_w
+        # v3.11 round 4: the leg prices per featured season and
+        # blends 0.90 x higher + 0.10 x lower - production's
+        # treatment - instead of reading the latest season alone
+        # (the Baugh defect: two featured seasons priced off a
+        # lone 4.98-YPC season at 33.61, a 23-point crater under
+        # his next-worst leg). Candidates are the latest season
+        # and the peak season (by rush yards, production's RB
+        # peak key); each prices via _rb_efficiency_of - the
+        # rush-quality composite when its PBP rates pass the
+        # coverage gate, the box-score pair otherwise. A
+        # candidate whose rates FAIL the gate is blocked and
+        # contributes no value in either form; if every candidate
+        # is blocked, the leg falls back to the pre-rebuild read
+        # exactly (the latest season's pair value, with the
+        # trailing adjustments below untouched). The branch owns
+        # RB's in-season treatment in production's form - an
+        # in-progress blend input shrinks toward the best
+        # completed season's read (52.0 when none exists) before
+        # blending, a lone in-progress season toward 52.0 - so
+        # the trailing F2 block skips RB, as it does QB and TE.
+        _ls_val, _ls_form = _rb_efficiency_of(ls)
+        if _inseason_year is not None:
+            # Production's in-season peak key: 12-game-
+            # equivalent rate, so a partial season's totals
+            # cannot win or lose the peak slot on volume alone.
+            def _rb_peak_fn(s):
+                _g = _safe(s.get("games_played"), 12)
+                _g = _g if _g >= 4 else 12
+                return _safe(s.get("rush_yards")) / max(_g, 12)
+            _peak_rb = max(seasons, key=_rb_peak_fn)
+        else:
+            _peak_rb = max(
+                seasons, key=lambda s: _safe(s.get("rush_yards")),
+                default=ls)
+        if _peak_rb is not ls:
+            _pk_val, _pk_form = _rb_efficiency_of(_peak_rb)
+        else:
+            _pk_val, _pk_form = _ls_val, _ls_form
+        _vals = [v for v in (_ls_val, _pk_val) if v is not None]
+        if not _vals:
+            if "blocked" in (_ls_form, _pk_form):
+                # Every candidate carried rates and failed the
+                # gate: the pair read, verbatim (with its
+                # round-7 parity discount, which lives inside
+                # _rb_pair_value).
+                eff = _rb_pair_value(ls)
+                if eff is None:
+                    return None
+            else:
+                return None
+        else:
+            if _inseason_year is not None:
+                _completed_vals = [
+                    v for v, _f in
+                    (_rb_efficiency_of(s) for s in seasons
+                     if s.get("season") != _inseason_year)
+                    if v is not None]
+                _base_rb = (max(_completed_vals) if _completed_vals
+                            else 52.0)
+                if ls.get("season") == _inseason_year \
+                        and _ls_val is not None:
+                    _ls_val = _shrink_partial(
+                        _ls_val, _base_rb,
+                        _safe(ls.get("games_played"), 12),
+                        elapsed=_season_elapsed)
+                    if _peak_rb is ls:
+                        _pk_val = _ls_val
+                elif _peak_rb.get("season") == _inseason_year \
+                        and _pk_val is not None:
+                    _pk_val = _shrink_partial(
+                        _pk_val, _base_rb,
+                        _safe(_peak_rb.get("games_played"), 12),
+                        elapsed=_season_elapsed)
+                _vals = [v for v in (_ls_val, _pk_val)
+                         if v is not None]
+            eff = (max(_vals) * 0.90 + min(_vals) * 0.10
+                   if len(_vals) == 2 else _vals[0])
         # grades_pass_route dropped: was PFF-only, no free replacement.
 
     elif pos == "QB":
@@ -1359,35 +2001,79 @@ def calc_efficiency_score(
             return None
 
     elif pos == "TE":
-        _ypr_te = _rate(ls, "yds_per_reception", "receiving_yards",
-                        "receptions")
-        if _ypr_te is None:
+        # v3.11 round 3: the leg prices the best season the way
+        # production does - 0.90 x higher + 0.10 x lower of the
+        # latest season vs the peak season (by receiving yards,
+        # production's TE peak key) - not the latest season alone.
+        # A TE's final college season is systematically his least
+        # representative efficiency sample: the offense schemes
+        # him as a safety valve, and late injuries land there
+        # (Bowers 2023: 12.75 YPR after 15.75 / 14.95 priced the
+        # whole leg at 79.57). Per-season values come from
+        # _te_efficiency_of; a season with no rate evidence is
+        # skipped, and the leg is missing only when NO season
+        # carries any (the QB branch's M1 form). The tprr
+        # supplement is player-level and still applies once, to
+        # the blended leg, exactly as before.
+        eff = _te_efficiency_of(ls)
+        if len(seasons) >= 2:
+            if _inseason_year is not None:
+                # Production's in-season peak key: 12-game-
+                # equivalent rate, so a partial season's totals
+                # cannot win or lose the peak slot on volume alone.
+                def _te_peak_fn(s):
+                    _g = _safe(s.get("games_played"), 12)
+                    _g = _g if _g >= 4 else 12
+                    return _safe(s.get("receiving_yards")) / max(_g, 12)
+                _peak_te = max(seasons, key=_te_peak_fn)
+            else:
+                _peak_te = max(
+                    seasons,
+                    key=lambda s: _safe(s.get("receiving_yards")))
+            _peak_eff = (_te_efficiency_of(_peak_te)
+                         if _peak_te is not ls else eff)
+            if _inseason_year is not None:
+                # v3.6 (F2) doctrine in production's form: an
+                # in-progress blend input shrinks toward the best
+                # completed season's read (the leg neutral 52.0
+                # when none exists) before blending. The branch
+                # owns TE's in-season treatment, as QB's does, so
+                # the trailing F2 block below skips TE.
+                _completed_eff = [
+                    v for v in (_te_efficiency_of(s) for s in seasons
+                                if s.get("season") != _inseason_year)
+                    if v is not None]
+                _base_te = (max(_completed_eff) if _completed_eff
+                            else 52.0)
+                if ls.get("season") == _inseason_year \
+                        and eff is not None:
+                    eff = _shrink_partial(
+                        eff, _base_te,
+                        _safe(ls.get("games_played"), 12),
+                        elapsed=_season_elapsed)
+                    if _peak_te is ls:
+                        _peak_eff = eff
+                elif _peak_te.get("season") == _inseason_year \
+                        and _peak_eff is not None:
+                    _peak_eff = _shrink_partial(
+                        _peak_eff, _base_te,
+                        _safe(_peak_te.get("games_played"), 12),
+                        elapsed=_season_elapsed)
+            if eff is None:
+                eff = _peak_eff
+            elif _peak_eff is not None:
+                eff = (max(eff, _peak_eff) * 0.90
+                       + min(eff, _peak_eff) * 0.10)
+        elif _inseason_year is not None \
+                and ls.get("season") == _inseason_year \
+                and eff is not None:
+            # Lone in-progress season: shrink toward the leg
+            # neutral - no completed baseline exists.
+            eff = _shrink_partial(
+                eff, 52.0, _safe(ls.get("games_played"), 12),
+                elapsed=_season_elapsed)
+        if eff is None:
             return None
-        ypr = _ypr_te
-        # Catch rate: receptions / targets measures hands + separation reliability.
-        # Only computed when targets is populated (not always available from CFBD).
-        targets = _safe(ls.get("targets"))
-        recs    = _safe(ls.get("receptions"))
-        # v3.2: targets below receptions is a pipeline failure, not data
-        # (audit section 0). Treat as missing so catch rate can never be
-        # computed from a garbage ratio above 100 percent.
-        if targets < recs:
-            targets = 0.0
-        catch_rate_score = 50.0  # neutral default when targets unknown
-        if targets > 0:
-            catch_rate = recs / targets
-            catch_rate_score = _scale(catch_rate, 0.60, 0.85)  # 55% → 0, 82%+ → 100
-        if targets > 0:
-            # v3.6 (round-2 audit F5): market share removed; the
-            # per-play pair renormalizes (0.50/0.20 -> 0.625/0.375).
-            eff = (
-                _scale(ypr, 7.5, 14.0) * 0.625 +
-                catch_rate_score         * 0.375
-            )
-        else:
-            # v3.2: targets missing -> catch rate is missing data, not neutral.
-            # v3.6 (F5): with share gone too, the leg is ypr alone.
-            eff = _scale(ypr, 7.5, 14.0)
         # Supplement with tprr proxy when available
         tprr = _eval_metric_value(eval_metrics, "tprr", min_confidence=0.30)
         if tprr is not None:
@@ -1441,13 +2127,14 @@ def calc_efficiency_score(
     # v3.6 (round-2 audit F7): scheme-inflation discount deleted (see
     # calc_production_score); competition + environment carry context.
 
-    if pos != "QB" and _inseason_year is not None \
+    if pos not in ("QB", "TE", "RB") and _inseason_year is not None \
             and ls.get("season") == _inseason_year:
-        # v3.6 (round-2 audit F2): WR/RB/TE efficiency reads the latest
+        # v3.6 (round-2 audit F2): WR efficiency reads the latest
         # season only, so an in-progress latest season shrinks toward
         # the efficiency of the completed seasons alone (the leg's
-        # neutral 52.0 when there are none) by min(1, GP/12). QB is
-        # handled inside its peak blend above. The recursion runs
+        # neutral 52.0 when there are none) by min(1, GP/12). QB, TE
+        # and RB handle it inside their peak-blend branches above.
+        # The recursion runs
         # without eval metrics or WEPA so the baseline is the plain
         # completed-season read.
         _completed = [s for s in seasons
@@ -1476,6 +2163,24 @@ def calc_efficiency_score(
                     eff = _clip(eff * 0.75 + float(wscore) * 0.25)
                 except (TypeError, ValueError):
                     pass
+
+    # v3.11 round 2 (EFF_VOLUME_SHRINK_CFG): an elite RB rate
+    # print must be backed by elite evidence volume - shrink the
+    # excess over the cfg level by the priced season's share of
+    # proof. No recorded volume in the priced season, no shrink.
+    # An in-progress priced season is skipped: the F2 shrink
+    # above already prices its partiality, and the two evidence
+    # questions stay orthogonal.
+    if (pos == "RB" and EFF_VOLUME_SHRINK_CFG.get("enabled")
+            and eff is not None
+            and not (_inseason_year is not None
+                     and ls.get("season") == _inseason_year)):
+        _n = (_safe(ls.get("rush_attempts"))
+              + _safe(ls.get("receptions")))
+        _lvl = float(EFF_VOLUME_SHRINK_CFG.get("level", 85.0))
+        if _n > 0 and eff > _lvl:
+            _k = float(EFF_VOLUME_SHRINK_CFG.get("k", 100.0))
+            eff = _lvl + (eff - _lvl) * (_n / (_n + _k))
 
     return _clip(eff)
 
@@ -2035,24 +2740,116 @@ def calc_utilization_score(seasons: List[Dict], position: str,
     completed-seasons read (the leg's neutral 50.0 when there are
     none) by min(1, GP/12), like production and efficiency.
     """
+    if _inseason_year is not None and seasons:
+        ls = _latest_season(seasons) or {}
+        if ls.get("season") == _inseason_year:
+            # F2 contract: the in-season raw is the CURRENT
+            # season's own read, shrunk toward the completed
+            # read. Round 6 step B deliberately does not blend
+            # the raw here - the completed seasons already enter
+            # through the shrink baseline (itself a step-B read),
+            # and blending the raw too would price them twice.
+            raw = _utilization_of_season(ls, position)
+            if raw is None:
+                return None
+            _completed = [s for s in seasons
+                          if s.get("season") != _inseason_year]
+            _base = (_utilization_raw(_completed, position)
+                     if _completed else 50.0)
+            if _base is None:
+                # v3.8: completed seasons carry no opportunity
+                # evidence either - shrink toward the leg neutral.
+                _base = 50.0
+            return _clip(_shrink_partial(
+                raw, _base, _safe(ls.get("games_played"), 12),
+                elapsed=_season_elapsed))
     raw = _utilization_raw(seasons, position)
     if raw is None:
         return None
-    if _inseason_year is None or not seasons:
-        return raw
-    ls = _latest_season(seasons) or {}
-    if ls.get("season") != _inseason_year:
-        return raw
-    _completed = [s for s in seasons if s.get("season") != _inseason_year]
-    _base = (_utilization_raw(_completed, position)
-             if _completed else 50.0)
-    if _base is None:
-        # v3.8: completed seasons carry no opportunity evidence
-        # either - shrink toward the leg neutral.
-        _base = 50.0
-    return _clip(_shrink_partial(raw, _base,
-                                 _safe(ls.get("games_played"), 12),
-                                 elapsed=_season_elapsed))
+    return raw
+
+
+# v3.11 round 6 (step B): utilization was the one heavy leg
+# still reading the LATEST season alone, while production and
+# (post-round-4) efficiency price best+latest. A hurt or split
+# final season therefore printed a recorded 0.0 at full weight -
+# Lacy's hurt 2026 (7.1 carries/g, under the scale's 8.0 floor,
+# after a 306-carry 2025) and Hardy's corrected 2026 both read
+# exactly 0.0 - and the mirror image maxed a compiler whose
+# latest season was his workload peak, his committee seasons
+# invisible to the leg (the Badie shape, S12.5). The leg now
+# prices production's own form: hi_share on the higher of the
+# latest-season read and the best-season read (best by the leg's
+# own volume key, the latest season itself eligible - a player
+# whose latest IS his workload peak reads exactly as before),
+# the rest on the lower. Shipped at production's own 0.9/0.1 in
+# round 6 (S14): the S12.5 sensitivity's Poor-tier cost (5.2 ->
+# 6.9) ran through utilization's peak residency and does not
+# materialize once step A removes that channel - Poor is flat
+# at every swept dose (0.7/0.8/0.9), the gate cannot separate
+# the doses, and 0.9 is the dose carrying the class evidence
+# (Lacy's zero repaired, S12.5). Composition with the F2
+# in-season shrink: the blend prices completed-profile reads
+# and the shrink's completed-seasons baseline; the in-season
+# raw stays the current season's own read (calc_utilization_
+# score), so a completed season is never priced twice.
+UTIL_BLEND_CFG = {
+    "enabled": True,
+    "hi_share": 0.9,
+}
+
+# v3.11 round 9 (discrepancy audit P2): the utilization leg's
+# receptions-proxy top anchors sat at ~p93 (WR) / ~p96 (TE)
+# of the recorded full-season distribution, so 118 of 1,034
+# WR profiles and 16 TE profiles printed EXACTLY 100.0 - the
+# leg stopped discriminating across its whole top decile,
+# and short-season sprints (a 5-game 7.6 rec/g TE season)
+# printed the same 100 as a full elite season. The *_hi
+# anchors recalibrate to ~p98-99 of the recorded GP>=10
+# distribution (targets anchors move proportionally for the
+# live path, which the gate frame cannot price); the
+# sample_denom shrink pulls a completed season's read
+# toward the leg neutral (50) in proportion to its games
+# when GP < sample_denom (0.0 = off). Swept in round9_lab.
+UTIL_CFG = {
+    "wr_rec_hi": 6.5,
+    "wr_tgt_hi": 10.0,
+    "te_rec_hi": 5.2,
+    "te_tgt_hi": 8.0,
+    "sample_denom": 0.0,
+}
+
+
+def _utilization_volume_key(season: Dict, pos: str) -> float:
+    """The leg's own volume key for best-season selection: the
+    counting stat the leg's scale is built on."""
+    if pos == "RB":
+        return _safe(season.get("rush_attempts"))
+    if pos == "QB":
+        return _safe(season.get("pass_attempts"))
+    _t = season.get("targets")
+    if _t is not None:
+        return _safe(_t)
+    return _safe(season.get("receptions"))
+
+
+def _util_sample_shrink(read: Optional[float],
+                        season: Dict) -> Optional[float]:
+    """Round 9: a completed season's utilization read shrinks
+    toward the leg neutral (50) in proportion to its games
+    when UTIL_CFG sample_denom is positive and GP < denom.
+    Applied on the completed-profile path (_utilization_raw)
+    only; the in-progress season's read keeps its own F2
+    treatment in calc_utilization_score."""
+    if read is None:
+        return None
+    _den = float(UTIL_CFG.get("sample_denom", 0.0))
+    if _den <= 0:
+        return read
+    _gp = _safe(season.get("games_played"), 0)
+    if _gp <= 0 or _gp >= _den:
+        return read
+    return _clip(50.0 + (float(read) - 50.0) * (_gp / _den))
 
 
 def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
@@ -2060,12 +2857,39 @@ def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
         return 50.0
 
     pos = position.upper()
-    ls  = _latest_season(seasons) or {}
+    ls = _latest_season(seasons) or {}
+    latest = _util_sample_shrink(_utilization_of_season(ls, position), ls)
+    if latest is None:
+        # The leg's missing-evidence rule keys on the latest
+        # season (v3.8 M1): no recorded opportunity there means
+        # the leg is missing, however the earlier seasons read.
+        return None
+    if not UTIL_BLEND_CFG.get("enabled"):
+        return latest
+    _best_read = None
+    _best_key = None
+    for _s in seasons:
+        _r = _util_sample_shrink(_utilization_of_season(_s, position), _s)
+        if _r is None:
+            continue
+        _k = _utilization_volume_key(_s, pos)
+        if _best_key is None or _k > _best_key:
+            _best_key, _best_read = _k, _r
+    if _best_read is None or _best_read == latest:
+        return latest
+    _hi = float(UTIL_BLEND_CFG.get("hi_share", 0.9))
+    return _clip(_hi * max(latest, _best_read)
+                 + (1.0 - _hi) * min(latest, _best_read))
 
-    # v3.8 (M1): the latest season records no opportunity stats at
+
+def _utilization_of_season(season: Dict, position: str) -> Optional[float]:
+    pos = position.upper()
+    ls = season
+
+    # v3.8 (M1): this season records no opportunity stats at
     # all (placeholder / fragment row - the fields are absent, not
-    # zero) - utilization is missing, not a zero-opportunity
-    # measurement. Recorded zeros measure (see _has_recorded_volume).
+    # zero) - the season carries no utilization measurement.
+    # Recorded zeros measure (see _has_recorded_volume).
     if pos in ("WR", "TE"):
         if ls.get("targets") is None and ls.get("receptions") is None:
             return None
@@ -2084,7 +2908,8 @@ def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
         targets = _safe(ls.get("targets"))
         if targets > 0:
             # Elite WR: 9+ targets/game; strong: 6+; average: 4
-            return _clip(_scale(targets / gp, 2.5, 10.0))
+            return _clip(_scale(targets / gp, 2.5,
+                                float(UTIL_CFG["wr_tgt_hi"])))
         # v3.8 (Becker fix, post-gate): targets missing - receptions
         # are the proxy, read on a RECEPTIONS scale, not the targets
         # scale. The RB branch below has done this since v3.3 (rec
@@ -2096,16 +2921,17 @@ def _utilization_raw(seasons: List[Dict], position: str) -> Optional[float]:
         # count is a deflated target count, and the scale, not the
         # player, should absorb the deflation.
         rpg = _safe(ls.get("receptions")) / gp
-        return _clip(_scale(rpg, 1.6, 6.5))
+        return _clip(_scale(rpg, 1.6, float(UTIL_CFG["wr_rec_hi"])))
 
     elif pos == "TE":
         targets = _safe(ls.get("targets"))
         if targets > 0:
             # Elite TE: 7+ targets/game; strong: 4+; average: 2.5
-            return _clip(_scale(targets / gp, 1.5, 8.0))
+            return _clip(_scale(targets / gp, 1.5,
+                                float(UTIL_CFG["te_tgt_hi"])))
         # Receptions proxy on a receptions scale (see WR above).
         rpg = _safe(ls.get("receptions")) / gp
-        return _clip(_scale(rpg, 1.0, 5.2))
+        return _clip(_scale(rpg, 1.0, float(UTIL_CFG["te_rec_hi"])))
 
     elif pos == "RB":
         carries  = _safe(ls.get("rush_attempts")) / gp
@@ -2572,10 +3398,140 @@ POSITION_FANTASY_MULT_SF: Dict[str, float] = {
 # blend-aware re-fit of the position weights was run and REJECTED:
 # leave-one-class-out CV scored the fitted set at or below the
 # shipped F12 weights at every position under this blend.
+#
+# v3.11 (ceiling attainability - Kaedon 2026-11-24: "no one can
+# get a 99 right now", and "a prospect can be generational while
+# checking some boxes and leaving some unchecked"). The 3.10
+# audit (ceiling-attainability-2026-11-24.md) showed leg ceilings
+# are mostly NOT the bind - production, utilization, efficiency,
+# age and competition all print 100 somewhere in the recorded
+# population; the bind is co-occurrence taxed by the mean term:
+# no real profile holds the maxima simultaneously, and the 40%
+# mean share charged a generational profile full price for its
+# one mediocre box. Two changes, both inside the blend:
+# (1) the peak share rises 0.60 -> 0.74 (QB keeps its 0.30 guard
+# share - raising it re-opens the QB Poor-tier wound for +0.3 on
+# the best QB, measured); (2) the TRIMMED MEAN: a profile that
+# has earned forgiveness drops its single weakest substantive
+# box from the mean term. Forgiveness is gated on demonstrated
+# spiky greatness, all four conditions absolute and uniform:
+# the profile prices >= 5 legs; its best leg is >= 90 (an elite
+# box exists); its production-anchored peak set prices >= 88
+# (the elite boxes are plural - one spike leg in a pass-happy
+# offense earns nothing); and the dropped leg is a genuinely
+# weak box (value <= 75) carrying real weight (>= 0.02 - sub-2%
+# legs are context adjustments, not boxes). Production is never
+# droppable (price of admission, as in the peak set), and the
+# trim never applies under the multi-None anchor. The gates are
+# what make the trim safe: ungated, it floated fragments
+# (+0.55 mean / +5.51 max) and lifted the Anderson case +2.2;
+# gated, fragment deltas match the alpha-only lift, Anderson is
+# byte-identical at 71.62, and the QB/WR Poor-tier >=70 rates
+# are flat. Offline gate vs 3.10: Pearson IMPROVES at QB/RB/WR
+# (+.013/+.002/+.001), TE -.002; Spearman within -.005
+# everywhere; median R2-4 +0.75. The stored ceiling moves where
+# the evidence said it honestly could (Chase 97.84, Nabers
+# 96.41, Stroud 94.96) and does not move where it could not
+# (best stored RB 92.32 - no stored back pairs a >=95 peak with
+# a >=85 mean, and the only blends that print one price three
+# legs and nothing else; see the note's detonation run).
 BLEND_CFG = {
-    "peak_alpha": 0.60,
+    "peak_alpha": 0.74,
     "peak_alpha_by_pos": {"QB": 0.30},
     "peak_k": 4,
+    # v3.11 round 6 (step A): peak-set ELIGIBILITY. The peak set is
+    # chosen by value rank, weight-blind, so a leg whose value is a
+    # workload/share read gets paid TWICE at the 0.74 peak share -
+    # once in the mean, once in the peak - while the rate legs that
+    # check it sit at residual weight (the Tyler Badie anatomy,
+    # S12: production + utilization at .76 combined effective
+    # weight, his efficiency at .046). Legs named here keep their
+    # full MEAN weight; they simply cannot occupy a peak slot.
+    # Utilization is a share of team opportunity - how much
+    # football ran through the player, not how well he played it -
+    # and production already carries the volume evidence into the
+    # peak set as the price of admission. Shipped in round 6 on
+    # the S14 sweep: the gate improves at QB and RB, WR/TE are
+    # byte-identical (utilization never reaches their peak sets),
+    # and the compiler's double-pay closes (Badie 93.95 -> 87.33).
+    "peak_exclude": ("utilization",),
+    # v3.11 round 8: per-position additions to peak_exclude.
+    # The peak set is chosen by value rank, so a leg that is
+    # high BY CONSTRUCTION for most of a position's pool
+    # occupies its slots mechanically and evicts the measured
+    # performance legs the peak term exists to price. At QB
+    # the context legs saturate: experience (pool median 92.5,
+    # a third of profiles at the 100 cap, outcome r ~ +.09)
+    # is peak-resident in 90.6% of priced QB blends and
+    # competition in 89.7% (round-8 residency census), while
+    # competition's real QB work is already done by the
+    # discount on the output legs. Both keep their full MEAN
+    # weight here; they simply cannot occupy a QB peak slot.
+    # SWEPT AND NOT SHIPPED (round 8, S16.3): excluding
+    # experience at QB gains +.004 P / +.008 S with Poor
+    # flat, but it taxes the dual-threat family the round
+    # exists to lift (Allen -1.20, Lamar -3.58 - their
+    # experience 100s were peak-resident and propping them)
+    # and Herbert -1.02; excluding both legs costs Pearson
+    # (-.005) for Spearman (+.013) and taxes Allen -3.06 /
+    # Lamar -4.10. The residency is real, but the binding
+    # problem is the experience leg's CONTENT (a saturating
+    # bounty, S11.4), not its peak address; the exclusion
+    # stays available behind this empty default as
+    # Kaedon's ruling.
+    "peak_exclude_by_pos": {},
+    # v3.11 round 6 (step C2): production's admission to the peak
+    # set - SWEPT AND KEPT AT "always" (S14). The alternatives
+    # ("never", and "margin" at 5/10/15/20 - production admitted
+    # only when within the margin of the leg it would evict, the
+    # Bowers S13.1 shape) all fail the same way: at a 0.74 peak
+    # share the forced slot is not a niche anti-spike guard, it
+    # is the scale's level control for the whole pool - median
+    # R2-4 rises +6.7 to +7.8, the Poor-tier >=70 rates explode
+    # (TE 2.6 -> 25.6-33.3, RB 5.2 -> 6.9-17.2, WR 12.9 ->
+    # 17.6-18.8), RB/WR Pearson fall .02-.04, and fragments are
+    # crowned (max +25.5). Bowers' eviction cost (+4.2 under
+    # "never") is real, and it is the price of the level control;
+    # his round-6 lift comes from the production anchor (step
+    # C1) instead. The trim gate prices the production-ANCHORED
+    # set by definition (trim_min_peak), whatever this mode says.
+    "peak_force": "always",
+    "peak_force_margin": 10.0,
+    # Trimmed mean (v3.11, see above): drop the single lowest
+    # priced leg from the MEAN term when the profile has earned
+    # it. The peak term always prices the full leg set.
+    "trim_lowest": True,
+    # Competition stays trimmable. Excluding it was tested in
+    # the 3.11 revision (the Fannin case): his weakest box by
+    # value is competition (60 at 4.3% weight), but by weighted
+    # drag it is athleticism (61.8 at 13.1%) - barring the
+    # competition drop just redirected his forgiveness to the
+    # heavier leg and RAISED him (94.25 -> 95.13). The level
+    # price belongs in the discount, not in trim bookkeeping.
+    "trim_exclude": ("production",),
+    "trim_min_legs": 5,
+    "trim_min_top": 90.0,
+    "trim_min_weight": 0.02,
+    "trim_drop_ceiling": 75.0,
+    # v3.11 round 7: forgiveness has a depth limit. The trim
+    # drops a WEAK box (40-75: a mediocre combine, a small-
+    # school competition print, one down rate season) - it
+    # was built for a spiky profile's softest strength. A leg
+    # under 40 is not a weak box, it is a failed trait, and
+    # deleting it from the mean is erasure, not forgiveness:
+    # the census of shipped-code drops is 75 pool-wide, 15 of
+    # them under 40, and the tail is where the doctrine
+    # breaks - a 24-year-old draftee's age leg (19.4) dropped
+    # whole, so the oldest prospect on the board paid no age
+    # price at all in either blend term. Legs under the floor
+    # are simply ineligible for the drop; the next-weakest
+    # eligible leg takes it instead. Gate in isolation (S15):
+    # RB byte-identical, QB improves (+.009 P / +.015 S - the
+    # forgiven sub-40 QB craters were noise), WR/TE flat,
+    # and no settled name moves (Engram keeps his 67.2 age
+    # drop; Fannin's 60 competition drop stands).
+    "trim_drop_floor": 40.0,
+    "trim_min_peak": 88.0,
 }
 
 
@@ -2615,10 +3571,143 @@ COMPETITION_CFG = {
     "prod_discount": 0.35,
     "discount_floor": 65.0,
     "discount_utilization": False,
+    # v3.11 round 10 (pattern-5 sub-item): the competition
+    # toll currently lands on production AND efficiency.
+    # Setting this False prices the toll once (production
+    # only) - swept in round10_lab, default keeps the 3.9
+    # both-legs ship.
+    "discount_efficiency": True,
+    # v3.11 revision: the depth curve bends in the boundary
+    # band only. The linear depth spent almost nothing just
+    # under the boundary (a MAC line at competition 60 paid
+    # 2.7%, so a record small-school season priced nearly
+    # whole - the Harold Fannin Jr. case, TE max of the pool)
+    # while the deep tail paid the most. Power < 1 re-prices
+    # the band [discount_band, discount_floor] on a concave
+    # curve CONTINUOUS with the original linear depth at the
+    # band's lower edge: below the band nothing changes at
+    # all (the Anderson case at 47 and the Kupp shape at 49
+    # price byte-identically, and the small-school cohort's
+    # outcome correlation is unmoved), and no level is ever
+    # refunded - a whole-curve power bend was tested first
+    # and rejected because it pays for the boundary band by
+    # refunding the deep tail, which landed on exactly the
+    # small-school busts the discount exists to price (two
+    # new Poor-tier crossers). The toll belongs at the
+    # boundary: raw counting stats just below the P4/G5 line
+    # are the ones nearly indistinguishable from P4 stats.
+    # At the shipped 0.3, competition 60 pays ~5.8% (was
+    # 2.7%) and competition 55 pays ~7.2% (was 5.4%).
+    "discount_band": 50.0,
+    "discount_power": 0.3,
 }
 
 
-def _blend_grade(priced, pos=None, allow_peak=True):
+# v3.11 round 2: the trimmed mean forgives ABSENCE, not measured
+# weakness (see the call site in score_prospect). When a profile
+# carries at least one role (featured) season, the listed legs
+# were priced from full-evidence featured seasons, so a low
+# value is a measurement and the leg is blocked from the trim
+# drop for that profile. The block scopes to UTILIZATION only,
+# on evidence: utilization is the one performance leg that
+# aggregates the whole featured body of work (a share of team
+# opportunity across every role season), so its low value is
+# always a full-evidence measurement - the split backfield is
+# the case. Efficiency prices the latest season alone (a
+# single-season read: a down year can be injury or scheme, not
+# a verdict on the body of work) and breakout is a change
+# measure whose low value often means "arrived early", the
+# absence of a rise rather than measured weakness. Blocking
+# those two as well was swept (round-2 lab A2): it moved
+# Justin Jefferson -1.29 and Rondale Moore -3.09 with no
+# face-validity gain, disturbing the WR grading Kaedon ruled
+# good. Utilization-only (A1) changes exactly five RB drops
+# pool-wide and no QB/WR/TE grade at all.
+TRIM_MEASURED_CFG = {
+    "enabled": True,
+    "legs": ("utilization",),
+}
+
+
+# v3.11 round 2: production level ceiling. The competition
+# discount (above) tolls the production leg by a percentage, but
+# a percentage of a level-inflated spike is still a spike: an FCS
+# back whose raw production prints ~97 keeps ~89 after the ~9%
+# toll at competition 49 and tops his class (the Eli Gillman
+# case: Montana, competition 49.09, the 2027 class RB1 at 79.93).
+# Below the ceiling's competition band the production leg's
+# PRINTABLE value is capped outright, the cap rising linearly
+# from cap_floor at comp_lo to an effective 100 at comp_hi:
+#   cap(comp) = cap_floor + (comp - comp_lo) / (comp_hi - comp_lo)
+#               * (100 - cap_floor)     for comp_lo < comp < comp_hi
+#   cap(comp) = cap_floor               for comp <= comp_lo
+#   no cap                              for comp >= comp_hi
+# The cap lands BEFORE the discount, so the toll still prices
+# the capped value. Scoped to RB: at competition ~49 the Kupp
+# fixture's raw production (~96.5) is indistinguishable from
+# Gillman's (~97) - a level-only ceiling cannot separate them,
+# and the recorded evidence says small-school WR production
+# translates (the Kupp shape is the model's own guardrail)
+# while lead-back FCS rushing volume is the demonstrated
+# failure. The ceiling's dose is set so the small-school
+# cohort's outcome correlation - the arbiter for all level
+# pricing in this model - does not degrade.
+PROD_CEILING_CFG = {
+    "enabled": True,
+    "positions": ("RB",),
+    "cap_floor": 82.0,
+    "comp_lo": 45.0,
+    "comp_hi": 60.0,
+}
+
+
+def _production_level_cap(competition: float) -> Optional[float]:
+    """The PROD_CEILING_CFG cap for a competition leg value, or
+    None when the level prices production at face value."""
+    if competition is None:
+        return None
+    _lo = float(PROD_CEILING_CFG.get("comp_lo", 45.0))
+    _hi = float(PROD_CEILING_CFG.get("comp_hi", 60.0))
+    _cap0 = float(PROD_CEILING_CFG.get("cap_floor", 82.0))
+    if competition >= _hi:
+        return None
+    if competition <= _lo or _hi <= _lo:
+        return _cap0
+    return _cap0 + (competition - _lo) / (_hi - _lo) * (100.0 - _cap0)
+
+
+def _peak_set(priced, force_override=None, pos=None):
+    """The peak set for a priced leg list [(name, weight, value)]:
+    the top `peak_k` legs by value among the peak-ELIGIBLE legs
+    (BLEND_CFG peak_exclude names legs that keep their mean weight
+    but cannot occupy a peak slot), with the production leg's
+    admission per BLEND_CFG peak_force ("always" / "never" /
+    "margin" - see the cfg). force_override pins the admission
+    mode for this call: the trim gate passes "always", because
+    its threshold is defined on the production-ANCHORED peak
+    (see trim_min_peak in BLEND_CFG) whatever admission mode the
+    peak term itself ships."""
+    k = max(1, int(BLEND_CFG.get("peak_k", 4)))
+    _excl = set(BLEND_CFG.get("peak_exclude") or ())
+    if pos is not None:
+        _excl |= set((BLEND_CFG.get("peak_exclude_by_pos") or {})
+                     .get(pos) or ())
+    _cand = [t for t in priced if t[0] not in _excl]
+    top = sorted(_cand, key=lambda t: t[2], reverse=True)[:k]
+    prod_leg = next((t for t in priced if t[0] == "production"), None)
+    if prod_leg is not None and prod_leg not in top:
+        _force = force_override or BLEND_CFG.get("peak_force",
+                                                  "always")
+        _admit = _force == "always"
+        if _force == "margin" and top:
+            _admit = prod_leg[2] >= top[-1][2] - float(
+                BLEND_CFG.get("peak_force_margin", 0.0) or 0.0)
+        if _admit:
+            top = top[:-1] + [prod_leg] if top else [prod_leg]
+    return top
+
+
+def _blend_grade(priced, pos=None, allow_peak=True, trim_block=()):
     """Blend the priced legs [(name, weight, value), ...] into the
     pre-adjustment grade. Weights renormalize over the legs present,
     which is exactly the post-redistribution total (~1.0).
@@ -2626,24 +3715,56 @@ def _blend_grade(priced, pos=None, allow_peak=True):
     allow_peak=False prices the plain mean: the caller passes it
     when the multi-None anchor fired (no measured performance core),
     because a profile with no measured performance has no peak to
-    price - its context legs alone are not a peak."""
+    price - its context legs alone are not a peak.
+
+    trim_block names legs that are ineligible for the trimmed-mean
+    drop for THIS profile on top of BLEND_CFG's trim_exclude (see
+    TRIM_MEASURED_CFG in score_prospect: measured performance legs
+    are not forgivable)."""
     if not priced:
         return 0.0
     total_w = sum(w for _, w, _ in priced)
     if total_w <= 0:
         return 0.0
-    mean = sum(w * v for _, w, v in priced) / total_w
+    mean_legs = priced
+    _trim_ok = (BLEND_CFG.get("trim_lowest") and allow_peak
+                and len(priced) >= int(BLEND_CFG.get("trim_min_legs", 5)))
+    if _trim_ok:
+        _excl = set(BLEND_CFG.get("trim_exclude") or ()) | set(trim_block)
+        _min_w = float(BLEND_CFG.get("trim_min_weight", 0.0) or 0.0)
+        _floor = float(BLEND_CFG.get("trim_drop_floor", 0.0) or 0.0)
+        _elig = [t for t in priced
+                 if t[0] not in _excl and t[1] >= _min_w
+                 and t[2] >= _floor]
+        _min_top = BLEND_CFG.get("trim_min_top")
+        if _min_top is not None and max(
+                v for _, _, v in priced) < float(_min_top):
+            _elig = []
+        _drop = min(_elig, key=lambda t: t[2]) if _elig else None
+        _ceil = BLEND_CFG.get("trim_drop_ceiling")
+        if _drop is not None and _ceil is not None \
+                and _drop[2] > float(_ceil):
+            _drop = None
+        _min_peak = BLEND_CFG.get("trim_min_peak")
+        if _drop is not None and _min_peak is not None:
+            _top = _peak_set(priced, force_override="always", pos=pos)
+            _tw = sum(w for _, w, _ in _top)
+            _pk = (sum(w * v for _, w, v in _top) / _tw
+                   if _tw > 0 else 0.0)
+            if _pk < float(_min_peak):
+                _drop = None
+        if _drop is not None:
+            mean_legs = [t for t in priced if t is not _drop]
+    _mean_w = sum(w for _, w, _ in mean_legs)
+    mean = (sum(w * v for _, w, v in mean_legs) / _mean_w
+            if _mean_w > 0 else 0.0)
     alpha = float((BLEND_CFG.get("peak_alpha_by_pos") or {}).get(
         pos, BLEND_CFG.get("peak_alpha", 0.0)) or 0.0)
     if alpha <= 0.0 or not allow_peak:
         return mean
-    k = max(1, int(BLEND_CFG.get("peak_k", 4)))
-    top = sorted(priced, key=lambda t: t[2], reverse=True)[:k]
-    # Production is the price of admission for peak credit (see
-    # BLEND_CFG): the peak set always carries the production leg.
-    prod_leg = next((t for t in priced if t[0] == "production"), None)
-    if prod_leg is not None and prod_leg not in top:
-        top = top[:-1] + [prod_leg] if top else [prod_leg]
+    # The peak set: top peak_k eligible legs by value, with
+    # production's admission per BLEND_CFG (see _peak_set).
+    top = _peak_set(priced, pos=pos)
     top_w = sum(w for _, w, _ in top)
     if top_w <= 0:
         return mean
@@ -2881,28 +4002,79 @@ def calc_loaded_roster_adjustment(
     return min(multiplier, 1.18)
 
 
-def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
-    """
-    Data-driven crowded-room bonus based on CFBD-derived depth chart rank.
+# v3.11 round 12 (Phase B / discrepancy audit P1): the
+# measured room price. When a season's top roommate out-
+# produced the player per game, the season's production
+# price is multiplied by 1 + cap * strength, where strength
+# is the roommate's per-game line scaled on the position's
+# own per-game anchors - the price the room actually charged
+# him, measured from the room_* aggregates the Phase B build
+# put on the season row. "replace_depth" retires the
+# depth-chart adjustment (calc_depth_chart_adjustment
+# returns neutral): the measured price is the ONLY room
+# price, so nobody is paid twice for the same room, and a
+# season with no aggregates gets no adjustment at all.
+# Swept in round12_lab (frame v8) at caps .10/.15/.20;
+# Kaedon accepted cap .15 WITH its two named exceptions
+# (Jefferson +3.44, TE perfect fixture 99.28) on 2026-11-25.
+ROOM_CFG = {
+    "cap": 0.15,
+    "replace_depth": True,
+}
 
-    A WR2/RB2 who still puts up meaningful volume despite playing behind an
-    alpha shows elite underlying talent suppressed by opportunity, not a talent
-    deficit.  This generalises calc_loaded_roster_adjustment() to all teams
-    automatically, rather than requiring a manually curated list.
 
-    depth_rank=1  → no adjustment (face-value production)
-    depth_rank=2+ → bonus proportional to production volume and group size
-
-    Returns a multiplier in [1.0, 1.20].  Returns 1.0 when depth data is absent
-    (e.g. seed-only prospects), allowing the manual loaded_roster fallback to apply.
-    """
-    if not seasons:
+def _room_multiplier_for_season(season: Dict, pos: str) -> float:
+    """One season's measured room price from its room_*
+    aggregates (position-group totals + the top roommate's
+    line). 1.0 when the season carries no aggregates, when
+    the player out-produced his top roommate per game, or
+    for positions the room does not price (QB)."""
+    cap = ROOM_CFG.get("cap") or 0.0
+    if not cap:
         return 1.0
-
-    ls = _latest_season(seasons)
-    if not ls:
+    rg = season.get("room_games")
+    if not rg:
         return 1.0
+    gp = max(_safe(season.get("games_played"), 12), 4)
+    if pos == "RB":
+        own = (_safe(season.get("rush_yards"))
+               + _safe(season.get("receiving_yards"))) / gp
+        mate = (season.get("room_mate_all_yds") or 0) / rg
+        if mate <= own or mate <= 0:
+            return 1.0
+        strength = _scale(mate, 30, 150)
+    elif pos in ("WR", "TE"):
+        own = _safe(season.get("receiving_yards")) / gp
+        mate = (season.get("room_mate_rec_yds") or 0) / rg
+        if mate <= own or mate <= 0:
+            return 1.0
+        strength = _scale(mate, 32, 120) if pos == "WR" \
+            else _scale(mate, 20, 100)
+    else:
+        return 1.0
+    return 1.0 + cap * strength / 100.0
 
+
+# v3.11 round 10 (discrepancy audit P1): where the
+# crowded-room multiplier lives. "per_season" False = the
+# legacy placement (one multiplier on the finished leg,
+# from the LATEST season's depth chart only). True = the
+# multiplier prices inside each season's production price
+# (see _score_production_season), so a career spent behind
+# an alpha is credited in every season it happened, and
+# the post-hoc latest-only multiplier retires. Swept in
+# round10_lab.
+DEPTH_CFG = {
+    "per_season": False,
+}
+
+
+def _depth_multiplier_for_season(ls: Dict, position: str) -> float:
+    """One season's crowded-room multiplier from its own
+    depth chart (the tier table calc_depth_chart_adjustment
+    has always used). 1.0 when the season carries no depth
+    data, lists the player first, or his volume in the room
+    was too thin to evidence suppression."""
     depth_rank = ls.get("depth_rank")
     group_size = ls.get("position_group_size")
 
@@ -2943,20 +4115,69 @@ def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
     return min(1.0 + realized_bonus, 1.20)
 
 
-def calc_experience_score(seasons: List[Dict], position: str) -> float:
+def calc_depth_chart_adjustment(seasons: List[Dict], position: str) -> float:
+    """
+    Data-driven crowded-room bonus based on CFBD-derived depth chart rank.
+
+    A WR2/RB2 who still puts up meaningful volume despite playing behind an
+    alpha shows elite underlying talent suppressed by opportunity, not a talent
+    deficit.  This generalises calc_loaded_roster_adjustment() to all teams
+    automatically, rather than requiring a manually curated list.
+
+    depth_rank=1  → no adjustment (face-value production)
+    depth_rank=2+ → bonus proportional to production volume and group size
+
+    Returns a multiplier in [1.0, 1.20].  Returns 1.0 when depth data is absent
+    (e.g. seed-only prospects), allowing the manual loaded_roster fallback to apply.
+    """
+    # v3.11 round 12 (R2-replace, Kaedon's ruling 2026-11-25):
+    # RETIRED while ROOM_CFG replaces it - the measured room
+    # price is the only room price now. Returning neutral here
+    # is what lets the curated loaded-roster fallback in
+    # score_prospect (which keys off a 1.0 from this function)
+    # apply exactly as it always did for depth-absent profiles.
+    # The tier table itself (_depth_multiplier_for_season)
+    # stays on record but no longer reaches a grade here.
+    if ROOM_CFG.get("replace_depth"):
+        return 1.0
+    if not seasons:
+        return 1.0
+
+    ls = _latest_season(seasons)
+    if not ls:
+        return 1.0
+
+    return _depth_multiplier_for_season(ls, position)
+
+
+def calc_experience_score(seasons: List[Dict],
+                          position: str) -> Optional[float]:
     """
     Experience metric for quarterbacks to mitigate misses like Trey Lance.
-    
+
     Args:
         seasons: List of season data
         position: Player position
-    
+
     Returns:
-        Experience score (0-100)
+        Experience score (0-100), or None for a QB with no
+        games-started / games-played evidence on any season.
     """
     if position != "QB":
         return 0.0
-    
+
+    # v3.11 round 3 (M1 doctrine): a QB with NO games evidence on
+    # any season has an UNMEASURED leg, not a measured zero - the
+    # old code priced him 0.0, the model's last score-missing-as-
+    # zero violation (every other leg returns None on no volume).
+    # A recorded 0 (appeared but never started, or recorded zero
+    # starts) is evidence and still prices 0.0. Live profiles
+    # carry GP, so this binds only on GP-missing profiles.
+    if not any(s.get("games_started") is not None
+               or s.get("games_played") is not None
+               for s in seasons):
+        return None
+
     # Calculate total games started across all seasons.
     # Fall back to games_played when games_started is unavailable (common for
     # pre-draft profiles that only have box-score game counts, not start data).
@@ -3151,7 +4372,8 @@ def score_prospect(
                                                 skip_sagarin=skip_sagarin,
                                                 _inseason_year=_inseason_year,
                                                 _draft_year=dy,
-                                                _season_elapsed=_season_elapsed)
+                                                _season_elapsed=_season_elapsed,
+                                                _age=age)
     
     # Apply crowded-room bonus: prefer data-driven depth rank when available,
     # fall back to manually curated loaded_roster list when depth data is absent.
@@ -3162,7 +4384,20 @@ def score_prospect(
 
     depth_chart_adjustment = calc_depth_chart_adjustment(seasons, pos)
 
-    if depth_chart_adjustment != 1.0:
+    if DEPTH_CFG.get("per_season"):
+        # Round 10: the room multiplier already priced inside
+        # each season (see _score_production_season); applying
+        # the latest-season multiplier again here would count
+        # the room twice. The curated fallback still serves
+        # profiles with no depth data on ANY season.
+        if any(s.get("depth_rank") is not None for s in seasons):
+            loaded_roster_adjustment = 1.0
+        else:
+            loaded_roster_adjustment = calc_loaded_roster_adjustment(
+                team, pos, season, production_score, market_share,
+                ypc=_safe(ls.get("yds_per_carry")),
+            )
+    elif depth_chart_adjustment != 1.0:
         # CFBD depth rank data available - use data-driven adjustment
         loaded_roster_adjustment = depth_chart_adjustment
     else:
@@ -3245,6 +4480,18 @@ def score_prospect(
                                                 _inseason_year=_inseason_year,
                                                 _today=_today)
 
+    # v3.11 round 2 (PROD_CEILING_CFG): below the ceiling's
+    # competition band the production leg's printable value is
+    # capped before the discount prices it - a percentage toll
+    # on a level-inflated spike leaves a spike (see the cfg).
+    if (PROD_CEILING_CFG.get("enabled")
+            and pos in (PROD_CEILING_CFG.get("positions") or ())
+            and production_score is not None
+            and competition_score is not None):
+        _p_cap = _production_level_cap(competition_score)
+        if _p_cap is not None and production_score > _p_cap:
+            production_score = _p_cap
+
     # v3.9 competition discount (see COMPETITION_CFG): the
     # absolute-output legs are priced against the level they were
     # achieved at, before weights, redistribution or blending see
@@ -3255,14 +4502,26 @@ def score_prospect(
     if (float(COMPETITION_CFG.get("prod_discount", 0.0) or 0.0) > 0.0
             and competition_score is not None):
         _c_floor = float(COMPETITION_CFG.get("discount_floor", 70.0))
-        _c_factor = 1.0 - float(COMPETITION_CFG["prod_discount"]) * max(
-            0.0, (_c_floor - competition_score) / _c_floor)
+        _c_gap = max(0.0, (_c_floor - competition_score) / _c_floor)
+        _c_pow = float(COMPETITION_CFG.get("discount_power", 1.0) or 1.0)
+        if _c_pow != 1.0 and _c_gap > 0.0:
+            # Boundary-band bend (see COMPETITION_CFG): concave
+            # inside [discount_band, discount_floor], continuous
+            # with the linear depth at the band's lower edge,
+            # the original slope untouched below it.
+            _c_band = float(COMPETITION_CFG.get(
+                "discount_band", 50.0))
+            _c_bgap = max(0.0, (_c_floor - _c_band) / _c_floor)
+            if 0.0 < _c_bgap and _c_gap < _c_bgap:
+                _c_gap = _c_bgap * (_c_gap / _c_bgap) ** _c_pow
+        _c_factor = 1.0 - float(COMPETITION_CFG["prod_discount"]) * _c_gap
         if production_score is not None:
             production_score = _clip(production_score * _c_factor)
         if utilization_score is not None and COMPETITION_CFG.get(
                 "discount_utilization", True):
             utilization_score = _clip(utilization_score * _c_factor)
-        if efficiency_score is not None:
+        if efficiency_score is not None and COMPETITION_CFG.get(
+                "discount_efficiency", True):
             efficiency_score = _clip(efficiency_score * _c_factor)
 
     # v3.7: there is no capital leg. The draft_capital argument is
@@ -3473,11 +4732,34 @@ def score_prospect(
         _leg_w = _weights.get(_leg_name, 0.0)
         if _leg_w > 0 and _leg_value is not None:
             _priced.append((_leg_name, _leg_w, float(_leg_value)))
-    if pos == "QB" and _weights.get("experience", 0.0) > 0:
+    if (pos == "QB" and experience_score is not None
+            and _weights.get("experience", 0.0) > 0):
         _priced.append(("experience", _weights["experience"],
                         float(experience_score)))
 
-    prospect_score = _blend_grade(_priced, pos, allow_peak=not _anchor_perf)
+    # v3.11 round 2 (TRIM_MEASURED_CFG): the trim forgives absence,
+    # not measured weakness. When the profile carries at least one
+    # role (featured) season, utilization was priced from the full
+    # featured body of work - a low value there is a measurement
+    # (a split backfield, a demotion), not an unchecked box, so it
+    # is blocked from the trim drop for this profile. A profile
+    # with no featured season priced everything from scraps;
+    # nothing was ever measured in a real role, and forgiveness
+    # keeps its original meaning there. Every other leg stays
+    # droppable either way (see the cfg for the scoping evidence).
+    # The case that forced the rule: Javonte Williams' utilization
+    # 43.7 - three featured UNC seasons in which his own coaches
+    # split the backfield with Michael Carter - was his trim
+    # drop, and forgiving it crowned a very good back the
+    # decade's RB max (92.32) over Barkley and McCaffrey.
+    _trim_block = ()
+    if TRIM_MEASURED_CFG.get("enabled"):
+        if any(_is_role_season(_s, pos) for _s in seasons):
+            _trim_block = tuple(TRIM_MEASURED_CFG.get("legs") or ())
+
+    prospect_score = _blend_grade(_priced, pos,
+                                  allow_peak=not _anchor_perf,
+                                  trim_block=_trim_block)
 
     # v3.2 R7: no late-round upside add-on. The final grade is the
     # weighted component sum plus the bounded translation adjustment only.
@@ -3632,7 +4914,7 @@ def score_prospect(
         "confidence_score":             confidence_score,
         "prospect_score":               prospect_score,
         "key_reasons":                  reasons,
-        "experience_score":             round(experience_score, 2),
+        "experience_score":             None if experience_score is None else round(experience_score, 2),
         "late_round_upside":             round(late_round_upside, 2),
         "translation_adjustment":        round(translation_adjustment, 2),
         "loaded_roster_adjustment":      round(loaded_roster_adjustment, 3),

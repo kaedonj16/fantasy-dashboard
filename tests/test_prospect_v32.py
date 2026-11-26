@@ -120,7 +120,7 @@ def _score(prospect, dc):
 
 class TestVersion:
     def test_model_version_bumped(self):
-        assert pm.MODEL_VERSION == "3.10"
+        assert pm.MODEL_VERSION == "3.11"
 
 
 class TestMissingCapital:
@@ -234,7 +234,13 @@ class TestMissingAge:
         aged = copy.deepcopy(SMITH)
         aged["age"] = neutral_age
         r_neutral = _score(aged, _dc("WR", 2))
-        assert r_missing["prospect_score"] > r_neutral["prospect_score"] + 1.0
+        # v3.11: the margin narrows (measured ~0.5, was > 1.0
+        # through 3.10) BY DESIGN - the gated trimmed mean forgives
+        # the priced ~50 age box in the neutral variant because
+        # Smith's peak set is elite, so a priced-mediocre box and a
+        # missing box nearly converge. Missing still wins: the
+        # redistribution also feeds the peak set's weights.
+        assert r_missing["prospect_score"] > r_neutral["prospect_score"] + 0.25
 
 
 class TestRegressionVsV31:

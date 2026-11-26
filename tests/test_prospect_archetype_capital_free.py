@@ -321,7 +321,10 @@ class TestArchetypeNeverFeedsGrade:
         # 93.92 in 3.9 (ceiling redesign; blend + competition
         # anchor only, legs unchanged),
         # 94.24 in 3.10 (bent dom curve + draft-anchored breakout
-        # age; breakout leg 88.97 -> 93.41 only).
+        # age; breakout leg 88.97 -> 93.41 only),
+        # 94.35 in 3.11 (peak share 0.74; no trimmable leg),
+        # 94.66 in 3.11 round 6 (step C1's rate key reprices
+        # his production anchor; steps A/B do not touch him).
         r = _score(SMITH, None)
-        assert r["prospect_score"] == 94.24
-        assert pm.MODEL_VERSION == "3.10"
+        assert r["prospect_score"] == 94.66
+        assert pm.MODEL_VERSION == "3.11"
