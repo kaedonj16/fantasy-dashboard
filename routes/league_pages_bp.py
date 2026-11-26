@@ -261,6 +261,14 @@ def page_autopilot(platform: str, season: int, league_id: str):
         "plan_error": None,
     }
     settings = data["settings"]
+    # Next scheduled run (Thu/Sun windows from autopilot_schedule, the
+    # single source of truth shared with render.yaml's cron services).
+    try:
+        from dashboard_services import autopilot_schedule
+
+        data["next_run_label"] = autopilot_schedule.next_run_label()
+    except Exception:
+        data["next_run_label"] = None
     # Fresh roster read (best effort): feeds the protected-players
     # editor and the team identity even when no plan is built.
     state = None

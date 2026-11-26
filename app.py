@@ -48086,14 +48086,37 @@ def build_portfolio_body(
                         t=_m.title())
                     for _m in ("off", "approve", "auto")
                 )
+                # Card-native section: hairline divider like the
+                # card's other bands, label + current state + Open on
+                # one line, the segmented control full-width under it,
+                # and (when on) the next scheduled run as a quiet
+                # secondary line. The page owns Run now; the card only
+                # reports the schedule.
+                try:
+                    from dashboard_services.autopilot_schedule import (
+                        next_run_label as _ap_next_label,
+                    )
+                    _ap_next_text = html.escape(_ap_next_label())
+                except Exception:
+                    _ap_next_text = ""
+                _ap_next = (
+                    f"<div class='pf-ap-next' data-ap-pf-nextrun"
+                    f"{'' if _apm != 'off' else ' hidden'}>"
+                    f"Next run &middot; {_ap_next_text}</div>"
+                    if _ap_next_text else ""
+                )
                 _ap_badge = (
                     f"<div class='pf-ap' data-ap-control "
                     f"data-platform='{html.escape(str(plat), quote=True)}' "
                     f"data-season='{html.escape(str(card_season), quote=True)}' "
                     f"data-league-id='{html.escape(str(lid), quote=True)}'>"
+                    f"<div class='pf-ap-head'>"
                     f"<span class='pf-ap-lab'>Autopilot</span>"
-                    f"<div class='pf-ap-seg' role='tablist' aria-label='Autopilot mode'>{_ap_btns}</div>"
+                    f"<span class='pf-ap-state' data-ap-pf-state "
+                    f"data-on='{'0' if _apm == 'off' else '1'}'>{_apm.title()}</span>"
                     f"<a class='pf-ap-link' href='{_ap_href}'>Open</a></div>"
+                    f"<div class='pf-ap-seg' role='tablist' aria-label='Autopilot mode'>{_ap_btns}</div>"
+                    f"{_ap_next}</div>"
                 )
         except Exception:
             _ap_badge = ""
@@ -48138,18 +48161,29 @@ def build_portfolio_body(
         "overflow:hidden;box-sizing:border-box;box-shadow:0 1px 3px rgba(18,45,75,.07);}"
         # Dark: step the card off the near-identical page navy with shadow.
         ":root[data-theme='dark'] .pf-lg-card{box-shadow:0 2px 10px rgba(0,0,0,.35);}"
-        # Autopilot card control: label + Off/Approve/Auto segmented
-        # control + page link, in the card grammar. The arming pulse is
-        # the portfolio form of the Autopilot page's Auto animation.
-        ".pf-ap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}"
+        # Autopilot card section: a hairline-topped band in the card
+        # grammar (like the live-score strip): label + current state +
+        # Open link on one line, the Off/Approve/Auto segmented control
+        # full-width with phone-sized targets, and the next scheduled
+        # run as a quiet secondary line when on. Arming Auto plays the
+        # page's sheen sweep in miniature (transform only, no shadow).
+        ".pf-ap{border-top:1px solid var(--grid);padding-top:8px;display:flex;flex-direction:column;gap:7px;}"
+        ".pf-ap-head{display:flex;align-items:baseline;gap:8px;}"
         ".pf-ap-lab{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);}"
-        ".pf-ap-seg{position:relative;display:flex;background:var(--row);border:1px solid var(--grid);border-radius:9px;padding:2px;gap:2px;}"
-        ".pf-ap-seg button{border:0;background:transparent;color:var(--text-muted);font:inherit;font-size:12px;font-weight:700;padding:4px 10px;border-radius:7px;cursor:pointer;transition:background .2s ease,color .2s ease;}"
+        ".pf-ap-state{font-size:12px;font-weight:800;color:var(--accent);}"
+        ".pf-ap-state[data-on='0']{color:var(--text-subtle);}"
+        ".pf-ap-link{margin-left:auto;font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;}"
+        ".pf-ap-seg{position:relative;overflow:hidden;display:flex;background:var(--row);border:1px solid var(--grid);border-radius:9px;padding:3px;gap:3px;}"
+        ".pf-ap-seg button{flex:1;border:0;background:transparent;color:var(--text-muted);font:inherit;font-size:12.5px;font-weight:700;padding:7px 0;min-height:34px;border-radius:7px;cursor:pointer;transition:background .2s ease,color .2s ease;}"
         ".pf-ap-seg button.ap-on{background:var(--accent);color:var(--on-accent);}"
-        ".pf-ap-link{font-size:12px;font-weight:700;color:var(--accent);text-decoration:none;}"
-        "@keyframes pfApArm{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 45%,transparent)}100%{box-shadow:0 0 0 10px transparent}}"
-        ".pf-ap.pf-ap-arming .pf-ap-seg{animation:pfApArm .38s ease-out;}"
-        "@media (prefers-reduced-motion: reduce){.pf-ap.pf-ap-arming .pf-ap-seg{animation:none;}}"
+        ".pf-ap-seg::after{content:'';position:absolute;inset:0;pointer-events:none;"
+        "background:linear-gradient(100deg,transparent 20%,color-mix(in srgb,var(--accent) 30%,transparent) 50%,transparent 80%);"
+        "transform:translateX(-100%);opacity:0;}"
+        ".pf-ap.pf-ap-arming .pf-ap-seg::after{animation:pfApSheen .5s ease-out;}"
+        "@keyframes pfApSheen{0%{transform:translateX(-100%);opacity:1}100%{transform:translateX(100%);opacity:1}}"
+        ".pf-ap-next{font-size:11.5px;color:var(--text-muted);}"
+        ".pf-ap-next[hidden]{display:none;}"
+        "@media (prefers-reduced-motion: reduce){.pf-ap.pf-ap-arming .pf-ap-seg::after{animation:none;}}"
         ".pf-lg-top{display:flex;align-items:flex-start;gap:8px;min-width:0;}"
         ".pf-lg-title{flex:1;min-width:0;display:flex;align-items:baseline;gap:5px;}"
         ".pf-lg-name{font-weight:900;font-size:19px;line-height:1.15;text-decoration:none;color:var(--text);"
@@ -48413,8 +48447,9 @@ def build_portfolio_body(
         # One page-scoped owner manages hydration, refresh, polling and cleanup.
         "<script>/* Portfolio cards are started by initPageRoot after deferred helpers load. */</script>"
         # Autopilot card controls: flipping a mode posts to the
-        # autopilot API and re-marks the segment; Auto gets the arming
-        # pulse. Errors leave the stored mode (and the segment) as-is.
+        # autopilot API and re-marks the segment, the state label, and
+        # the next-run line in place; Auto gets the arming sheen.
+        # Errors leave the stored mode (and the segment) as-is.
         "<script>(function(){"
         "document.querySelectorAll('[data-ap-control]').forEach(function(box){"
         "box.querySelectorAll('[data-ap-pf-mode]').forEach(function(b){"
@@ -48427,7 +48462,11 @@ def build_portfolio_body(
         "{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})})"
         ".then(function(r){if(!r.ok)throw new Error('mode save failed');return r.json();})"
         ".then(function(){box.querySelectorAll('[data-ap-pf-mode]').forEach(function(x){x.classList.toggle('ap-on',x===b);});"
-        "setTimeout(function(){box.classList.remove('pf-ap-arming');},420);})"
+        "var st=box.querySelector('[data-ap-pf-state]');"
+        "if(st){st.textContent=m.charAt(0).toUpperCase()+m.slice(1);st.setAttribute('data-on',m==='off'?'0':'1');}"
+        "var nx=box.querySelector('[data-ap-pf-nextrun]');"
+        "if(nx){nx.hidden=(m==='off');}"
+        "setTimeout(function(){box.classList.remove('pf-ap-arming');},540);})"
         ".catch(function(){box.classList.remove('pf-ap-arming');});"
         "});});});})();</script>"
         # Matchup hydration is part of the consolidated card lifecycle above.

@@ -430,6 +430,172 @@ def test_kill_switch_endpoint_blocks_execution(offline_client, env, monkeypatch)
     assert FakeTransport.state["posts"] == []
 
 
+# ── Mode switch performance contract ──────────────────────────────────
+# Kaedon (2026-11-25): turning Auto on "took a minute" because the page
+# reloaded after the mode POST and the reload paid a fresh ESPN read +
+# plan build. The mode endpoint itself must stay a pure settings
+# write: no plan build, no ESPN read (transport-level), no scheduler
+# pass, no notifications. The page now flips the switch in place.
+
+def test_mode_post_does_no_plan_build_or_espn_read(offline_client, env, monkeypatch):
+    _session(offline_client)
+    calls = {"build": 0, "read": 0, "pass": 0, "gets": 0}
+    from dashboard_services import autopilot_plan, autopilot_schedule
+    from dashboard_services.providers import espn_writes
+
+    def _count(key):
+        def _fn(*a, **k):
+            calls[key] += 1
+            return {}
+        return _fn
+
+    monkeypatch.setattr(autopilot_plan, "build_plan", _count("build"))
+    monkeypatch.setattr(espn_writes, "read_lineup_state", _count("read"))
+    monkeypatch.setattr(autopilot_schedule, "run_league_pass", _count("pass"))
+    orig_get = FakeTransport.get_league
+
+    def _counting_get(self, season, league_id, params):
+        calls["gets"] += 1
+        return orig_get(self, season, league_id, params)
+
+    monkeypatch.setattr(FakeTransport, "get_league", _counting_get)
+    resp = offline_client.post(
+        f"/api/autopilot/espn/{SEASON}/{LEAGUE}/mode", json={"mode": "auto"})
+    assert resp.status_code == 200
+    assert resp.get_json()["mode"] == "auto"
+    # Persisted to the same store the page reads...
+    assert store.get_settings(ACCOUNT, "espn", LEAGUE, SEASON)["mode"] == "auto"
+    # ...and nothing else ran.
+    assert calls == {"build": 0, "read": 0, "pass": 0, "gets": 0}
+    assert FakeTransport.state["posts"] == []
+    assert env["notes"]["executed"] == [] and env["notes"]["waiting"] == []
+
+
+def _ap_fragment(body: str) -> str:
+    """The Autopilot page's own markup + script, sliced out of the
+    full page (the site chrome legitimately reloads for SW updates
+    and sign-in; the Autopilot fragment must never reload)."""
+    start = body.index('id="apRoot"')
+    script_end = body.index("</script>", body.index("getElementById('apRoot')"))
+    return body[start:script_end]
+
+
+def test_page_has_no_hard_reload_and_shows_next_run(offline_client, env):
+    _approve_mode(env)
+    _session(offline_client)
+    body = offline_client.get(
+        f"/espn/{SEASON}/{LEAGUE}/autopilot").get_data(as_text=True)
+    # All actions refresh in place now; a document reload in the
+    # Autopilot fragment was the visible repaint Kaedon reported.
+    assert "location.reload" not in _ap_fragment(body)
+    # Next scheduled run + Run now live in the hero when Autopilot is on.
+    assert 'id="apNextRun"' in body
+    assert ">Next run</div>" in body
+    assert ">Run now</button>" in body
+
+
+def test_page_off_mode_hides_next_run_and_run_now(offline_client, env):
+    _session(offline_client)
+    body = offline_client.get(
+        f"/espn/{SEASON}/{LEAGUE}/autopilot").get_data(as_text=True)
+    assert 'id="apNextRun"' not in body
+    assert ">Run now</button>" not in body
+    assert "location.reload" not in _ap_fragment(body)
+
+
+# ── Run now ────────────────────────────────────────────────────────────
+
+def test_run_now_auto_executes(offline_client, env):
+    store.save_settings(ACCOUNT, "espn", LEAGUE, SEASON, {"mode": "auto"})
+    _session(offline_client)
+    resp = offline_client.post(
+        f"/api/autopilot/espn/{SEASON}/{LEAGUE}/run-now", json={})
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "executed"
+    assert len(FakeTransport.state["posts"]) == 1
+    assert env["notes"]["executed"], "execution notification not sent"
+
+
+def test_run_now_approve_queues_and_notifies_without_executing(offline_client, env):
+    _approve_mode(env)
+    _session(offline_client)
+    resp = offline_client.post(
+        f"/api/autopilot/espn/{SEASON}/{LEAGUE}/run-now", json={})
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "queued"
+    assert FakeTransport.state["posts"] == []  # nothing executed
+    assert env["conn"].plans, "plan was not stored"
+    assert env["notes"]["waiting"], "moves-waiting notification not sent"
+    assert env["notes"]["executed"] == []
+
+
+def test_run_now_off_mode_rejected(offline_client, env):
+    _session(offline_client)
+    resp = offline_client.post(
+        f"/api/autopilot/espn/{SEASON}/{LEAGUE}/run-now", json={})
+    assert resp.status_code == 400
+    assert FakeTransport.state["posts"] == []
+    assert env["conn"].plans == {}
+
+
+def test_run_now_already_running_conflicts(offline_client, env):
+    from dashboard_services import autopilot_schedule
+    store.save_settings(ACCOUNT, "espn", LEAGUE, SEASON, {"mode": "auto"})
+    _session(offline_client)
+    lock = autopilot_schedule._league_lock(
+        autopilot_schedule._league_key(ACCOUNT, "espn", LEAGUE, SEASON))
+    lock.acquire()
+    try:
+        resp = offline_client.post(
+            f"/api/autopilot/espn/{SEASON}/{LEAGUE}/run-now", json={})
+    finally:
+        lock.release()
+    assert resp.status_code == 409
+    assert FakeTransport.state["posts"] == []
+
+
+# ── Portfolio (My Leagues) card control ────────────────────────────────
+
+def _pf_league(league_id, platform, name):
+    return {
+        "league_id": league_id, "name": name, "platform": platform,
+        "season": SEASON, "wins": 8, "losses": 5, "rank": 3,
+        "total_teams": 12, "record": "8-5", "streak": ["W", "L", "W"],
+        "pos_user_vals": {}, "pos_league_avgs": {}, "pos_user_rank": {},
+    }
+
+
+def test_portfolio_control_renders_for_usable_espn_only(offline_client, env, monkeypatch):
+    monkeypatch.setenv("AUTOPILOT_PREVIEW_EMAILS", OWNER_EMAIL)
+    store.save_settings(ACCOUNT, "espn", LEAGUE, SEASON, {"mode": "auto"})
+    store.save_settings(ACCOUNT, "espn", OTHER_LEAGUE, SEASON, {"mode": "approve"})
+    leagues = [
+        _pf_league(LEAGUE, "espn", "Josh Allen's Twitter"),
+        _pf_league(OTHER_LEAGUE, "espn", "The Gridiron"),
+        _pf_league("123456789", "sleeper", "Sleeper League"),
+        _pf_league("1307110", "yahoo", "Yahoo League"),
+    ]
+    import app as appmod
+    with appmod.app.test_request_context("/portfolio"):
+        from flask import session
+        session["account_id"] = ACCOUNT
+        session["account_email"] = OWNER_EMAIL
+        body = appmod.build_portfolio_body(
+            "tester", valid_leagues=leagues, all_leagues_data=leagues,
+            season=SEASON, holdings=[], num_leagues=len(leagues),
+            nfl_exposure=[], cross_pos={}, total_wins=32, total_losses=20,
+            total_ties=0)
+    # Both usable ESPN leagues get the control (markup form; the
+    # control's own script also names the attributes); Sleeper and
+    # Yahoo cards get none, so exactly two of each element render.
+    assert body.count("pf-ap' data-ap-control") == 2
+    assert body.count("pf-ap-next' data-ap-pf-nextrun") == 2
+    assert "Next run &middot;" in body
+    # Stored modes are the selected state on render.
+    assert "data-on='1'>Auto</span>" in body
+    assert "data-on='1'>Approve</span>" in body
+
+
 # ── Scheduler ──────────────────────────────────────────────────────────
 
 def _run_scheduler(env, monkeypatch):
