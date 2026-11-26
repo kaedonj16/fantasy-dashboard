@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.11"
+        assert pm.MODEL_VERSION == "3.12"
 
 
 class TestKnotPricing:
@@ -142,33 +142,41 @@ class TestTransformZones:
             copy.deepcopy(_rb_prospect(ath)), _dc("RB", 10), skip_sagarin=True)
         return out["athleticism_score"]
 
+    # v3.12 note: these RB payload reads now pass through the
+    # RB-2b pool-percentile re-anchor after the zone transform
+    # (the zones themselves are unchanged - the raw-component
+    # assertions below and the QB toe test still pin them).
+    # Expected values are _rb_ath_reanchor(transformed).
     def test_identity_zone_raw_at_or_below_60(self):
         p25 = {"forty_yard": 4.58, "vertical_inches": 33.0,
                "broad_jump_in": 117, "three_cone": 7.15,
                "short_shuttle": 4.348}
         assert pm.calc_athleticism_score(p25, "RB") == pytest.approx(38.0)
-        assert self._component(p25) == pytest.approx(38.0)
+        # transform identity at 38.0; re-anchored: 18.74
+        assert self._component(p25) == pytest.approx(18.74, abs=0.05)
         p50 = {"forty_yard": 4.51, "vertical_inches": 35.0,
                "broad_jump_in": 120, "three_cone": 7.01,
                "short_shuttle": 4.235}
         assert pm.calc_athleticism_score(p50, "RB") == pytest.approx(56.0)
-        assert self._component(p50) == pytest.approx(56.0)
+        # transform identity at 56.0; re-anchored: 46.23
+        assert self._component(p50) == pytest.approx(46.23, abs=0.05)
 
     def test_confirmation_zone_slope_070(self):
         p75 = {"forty_yard": 4.45, "vertical_inches": 37.0,
                "broad_jump_in": 123.75, "three_cone": 6.89,
                "short_shuttle": 4.143}
         assert pm.calc_athleticism_score(p75, "RB") == pytest.approx(77.0)
-        # 60 + (77 - 60) * 0.70 = 71.9
-        assert self._component(p75) == pytest.approx(71.9)
+        # 60 + (77 - 60) * 0.70 = 71.9; re-anchored: 86.26
+        assert self._component(p75) == pytest.approx(86.26, abs=0.05)
 
     def test_exceptional_toe_raw_100_lands_91(self):
         best = {"forty_yard": 4.24, "vertical_inches": 43.0,
                 "broad_jump_in": 137, "three_cone": 6.50,
                 "short_shuttle": 3.93}
         assert pm.calc_athleticism_score(best, "RB") == pytest.approx(100.0)
-        # 77.5 + (100 - 85) * 0.90 = 91.0
-        assert self._component(best) == pytest.approx(91.0)
+        # 77.5 + (100 - 85) * 0.90 = 91.0, above the frozen
+        # pool's max print, so the re-anchor lands at 100.0.
+        assert self._component(best) == pytest.approx(100.0)
 
     def test_qb_no_longer_capped_by_old_compression(self):
         # v3.2 R7-A3 capped a tested QB's component at 62.5 (quarter of the

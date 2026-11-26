@@ -164,7 +164,7 @@ class TestAgeAnchor:
 
 class TestVersion:
     def test_model_version_is_310(self):
-        assert pm.MODEL_VERSION == "3.11"
+        assert pm.MODEL_VERSION == "3.12"
 
     def test_shipped_cfg(self):
         assert pm.DOM_CFG["curve_power"] == pytest.approx(0.65)

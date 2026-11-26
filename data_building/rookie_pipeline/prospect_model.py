@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.11 (see MODEL_VERSION)
+Model version: 3.12 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.11"
+MODEL_VERSION = "3.12"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -1020,6 +1020,20 @@ PROD_EVIDENCE_CFG = {
     # good, not merely present. 0.0 = presence release (the
     # pre-round-9 behavior). Swept in round9_lab.
     "release_min_price": 0.0,
+    # v3.12 (RB-2b change 1): at RB the release is corroboration-
+    # priced. Round 9 shipped the machinery at dose 0.0 because a
+    # priced release taxed WR/TE profiles whose second featured
+    # season was legitimately modest (Chase / Nabers / Engram);
+    # inside an RB-only architecture that objection does not
+    # exist, and the RB evidence is one-sided: the cap's presence
+    # release is what let one-season spikes (Abanikanda's 2022,
+    # corroborated only by a 2021 that prices 28.50) print at
+    # full value. An RB spike releases only when the second-best
+    # featured season itself prices >= 55 (Javonte 73.55 and
+    # Mixon 70.36 still release; Abanikanda 28.50 does not).
+    # Other positions keep the global 0.0 presence release,
+    # byte-identical.
+    "release_min_price_by_pos": {"RB": 55.0},
 }
 
 
@@ -1036,7 +1050,9 @@ def _production_evidence_cap(prod: float, seasons: List[Dict],
         return prod
     featured = [s for s in seasons if _is_role_season(s, pos)]
     if len(featured) >= 2:
-        _rmp = float(PROD_EVIDENCE_CFG.get("release_min_price", 0.0))
+        _rmp = float((PROD_EVIDENCE_CFG.get(
+            "release_min_price_by_pos") or {}).get(
+                pos, PROD_EVIDENCE_CFG.get("release_min_price", 0.0)))
         if _rmp <= 0:
             return prod
         _prices = sorted(
@@ -3480,6 +3496,22 @@ BLEND_CFG = {
     # stays available behind this empty default as
     # Kaedon's ruling.
     "peak_exclude_by_pos": {},
+    # v3.12 (RB-2b hygiene, peak-composition commission S7.4): a
+    # peak slot must carry at least this much weight. The peak set
+    # is chosen by value rank, weight-blind, so a leg priced at a
+    # token weight (RB durability, ~0.006-0.007) holds a top-4
+    # slot in 70.7% of RB profiles and renormalizes the peak term
+    # around a value its own weight says is decoration. The floor
+    # is the trim's own minimum weight (0.02): a leg too light to
+    # be forgiven is too light to anchor the peak. RB-scoped -
+    # the census that proved the defect is an RB census, and the
+    # other positions' peak sets are untouched (byte-identical).
+    # Measured on gate_rows_v8 (RB-2b + p40 base): RB gate
+    # .4567/.4531 -> .4682/.4651, Poor >=70 6.9 -> 1.7, fixtures
+    # byte-exact. This is hygiene, NOT the Mixon fix: the
+    # commission killed every composition mechanism as a Mixon
+    # lever (design note S7); Mixon is a named residual.
+    "peak_min_weight_by_pos": {"RB": 0.02},
     # v3.11 round 6 (step C2): production's admission to the peak
     # set - SWEPT AND KEPT AT "always" (S14). The alternatives
     # ("never", and "margin" at 5/10/15/20 - production admitted
@@ -3676,6 +3708,147 @@ def _production_level_cap(competition: float) -> Optional[float]:
     return _cap0 + (competition - _lo) / (_hi - _lo) * (100.0 - _cap0)
 
 
+# ------------------------------------------------------------------
+# v3.12 RB-2b (Kaedon 2026-11-25: "the rb grading needs
+# reimagined because all other pos are good"). RB-scoped changes
+# hanging off the shared pipeline; QB/WR/TE are byte-identical by
+# construction (every change below keys on pos == "RB" or an
+# RB-only cfg entry). Design + prototype evidence:
+# prospect-runs/rb-reimagination-design-2026-11-25.md (S1-S7).
+# Change 1 (corroboration-priced release) lives in
+# PROD_EVIDENCE_CFG; change 6 (peak min-weight) in BLEND_CFG.
+# The blend machinery itself is untouched (peak share 0.74,
+# gated trim, forced production slot - the level machinery two
+# rounds proved load-bearing).
+#
+# Change 3: athleticism re-anchored to the RB population. The
+# shipped scale compresses the combine's information (Barkley's
+# 4.40 / 41-inch print priced 73.49, a mid-pack value for the
+# best athlete in the pool). At RB the leg's value becomes its
+# percentile among priced RBs - the display-percentile doctrine
+# turned inward - mapped 5 + 95 x pct, at the same 0.0936
+# weight. The pool is the FROZEN recorded population below
+# (2016-2024 drafted RBs, shipped-scale values, n = 159): a
+# pinned constant table, never recomputed per class, so a live
+# grade cannot drift with the class being graded.
+RB_ATH_POOL = (
+    18.47, 22.0, 22.8, 27.22, 27.54, 28.0, 28.79, 29.06,
+    29.23, 30.52, 30.7, 30.76, 30.86, 31.33, 32.71, 32.74,
+    34.32, 34.33, 34.41, 34.63, 35.89, 36.17, 37.58, 39.2,
+    39.6, 40.52, 40.57, 40.89, 40.91, 41.09, 41.35, 41.57,
+    41.79, 41.9, 42.12, 42.63, 42.66, 43.14, 43.14, 43.14,
+    43.69, 44.9, 45.39, 45.5, 45.63, 45.71, 45.95, 46.1,
+    46.61, 46.65, 47.09, 47.45, 47.75, 49.09, 49.16, 49.49,
+    49.96, 50.68, 51.96, 52.33, 52.36, 52.43, 53.2, 53.65,
+    54.06, 54.74, 55.17, 55.62, 55.66, 56.86, 57.01, 57.12,
+    57.35, 57.7, 57.91, 58.03, 58.19, 58.2, 58.3, 58.37,
+    59.0, 59.16, 59.54, 59.6, 59.73, 59.95, 60.1, 60.18,
+    60.39, 60.55, 60.97, 61.05, 61.34, 61.68, 62.1, 62.1,
+    62.73, 62.8, 62.98, 63.73, 64.31, 64.31, 64.57, 64.59,
+    64.61, 64.69, 64.85, 64.85, 65.04, 65.54, 65.95, 66.01,
+    66.88, 67.5, 67.58, 67.74, 67.89, 67.94, 67.94, 68.01,
+    68.12, 68.42, 68.66, 68.68, 68.75, 69.03, 69.08, 69.31,
+    69.8, 70.16, 70.41, 70.6, 70.86, 71.46, 71.5, 71.79,
+    72.0, 72.29, 72.82, 73.43, 73.49, 73.64, 73.64, 73.75,
+    74.28, 74.4, 74.92, 75.4, 75.4, 75.83, 75.93, 76.93,
+    78.18, 78.52, 78.98, 81.01, 81.06, 82.25, 83.47,
+)
+
+
+def _rb_ath_reanchor(value):
+    """Map a shipped-scale RB athleticism value to its frozen-
+    pool percentile on the 5-100 re-anchored scale."""
+    import bisect as _bisect
+    pct = _bisect.bisect_right(RB_ATH_POOL, float(value)) / len(RB_ATH_POOL)
+    return 5.0 + 95.0 * pct
+
+
+def _pool_percentile(sorted_vals, q):
+    """Linear-interpolation percentile (numpy default method)."""
+    n = len(sorted_vals)
+    if n == 1:
+        return float(sorted_vals[0])
+    rank = (float(q) / 100.0) * (n - 1)
+    lo = int(rank)
+    hi = min(lo + 1, n - 1)
+    return (sorted_vals[lo] * (1.0 - (rank - lo))
+            + sorted_vals[hi] * (rank - lo))
+
+
+# Change 5: a missing RB athleticism leg prices at the pool's
+# 40th percentile ON THE RE-ANCHORED SCALE (43.36) instead of
+# redistributing its weight - missing must never price better
+# than a tested print. Hygiene, not a fix: the Mixon lab
+# (design note S6) proved the redistribution premium is worth
+# ~0.9 points on the named case and killed the theory that it
+# drives his grade; the fill ships because a free leg is wrong
+# in principle and the gate improves slightly with it.
+RB_ATH_FILL_P40 = _pool_percentile(
+    sorted(_rb_ath_reanchor(v) for v in RB_ATH_POOL), 40.0)
+
+# Change 2: receiving as a direct leg, weight 0.08, funded by
+# utilization -0.04 / age -0.02 / breakout -0.02 (the legs the
+# evidence indicts: workload double-pay and the age amplifier).
+# The leg prices 0.5 x best featured-season receiving yards per
+# game (scale 4-42) + 0.5 x career receiving share of
+# all-purpose yards over featured seasons (scale 0.04-0.32),
+# from the counting stats the pipeline already stores.
+#
+# ASYMMETRIC by Kaedon's pure-rusher doctrine (2026-11-25: "a
+# prospect can be great as just a pure rusher though"): the leg
+# PAYS when strong and goes QUIET when weak. Below
+# RB_RECEIVING_MIN_PRICE the leg is simply absent from the
+# priced list - its weight is never charged - so a pure rusher
+# grades exactly as if the leg did not exist (Henry is the
+# named proof: 76.91 flat vs 78.12 asymmetric in the lab).
+# Missing receiving data = leg absent, never zero.
+RB_RECEIVING_WEIGHT = 0.08
+RB_RECEIVING_MIN_PRICE = 50.0
+RB2B_FUND = {"utilization": -0.04, "age": -0.02, "breakout": -0.02}
+
+
+def _rb_receiving_leg(seasons):
+    """The RB-2b receiving leg value, or None when the profile
+    carries no featured-season receiving evidence."""
+    feat = _role_gated_seasons(seasons or [], "RB")
+    if not feat:
+        return None
+    best_rg = 0.0
+    tot_rec = 0.0
+    tot_all = 0.0
+    for s in feat:
+        gp = max(_safe(s.get("games_played"), 12), 1)
+        rec = _safe(s.get("receiving_yards"))
+        best_rg = max(best_rg, rec / gp)
+        tot_rec += rec
+        tot_all += rec + _safe(s.get("rush_yards"))
+    if tot_all <= 0:
+        return None
+    share = tot_rec / tot_all
+    return (0.5 * _scale(best_rg, 4.0, 42.0)
+            + 0.5 * _scale(share, 0.04, 0.32))
+
+
+def _rb2b_priced_list(priced, seasons, base_weights):
+    """Apply the RB-2b priced-list transforms to the shipped
+    list: funding deltas on the legs present, the p40 fill when
+    athleticism is missing, and the asymmetric receiving leg.
+    Mirrors the validated lab construction order exactly."""
+    out = []
+    for (name, w, v) in priced:
+        if name in RB2B_FUND:
+            w = max(w + RB2B_FUND[name], 0.0)
+        out.append((name, w, v))
+    if not any(n == "athleticism" for n, _, _ in out):
+        out.append(("athleticism",
+                    float(base_weights.get("athleticism", 0.0936)),
+                    RB_ATH_FILL_P40))
+    rec = _rb_receiving_leg(seasons)
+    if rec is not None and rec >= RB_RECEIVING_MIN_PRICE:
+        out.append(("receiving", RB_RECEIVING_WEIGHT, rec))
+    return out
+
+
 def _peak_set(priced, force_override=None, pos=None):
     """The peak set for a priced leg list [(name, weight, value)]:
     the top `peak_k` legs by value among the peak-ELIGIBLE legs
@@ -3693,6 +3866,11 @@ def _peak_set(priced, force_override=None, pos=None):
         _excl |= set((BLEND_CFG.get("peak_exclude_by_pos") or {})
                      .get(pos) or ())
     _cand = [t for t in priced if t[0] not in _excl]
+    _min_w = None
+    if pos is not None:
+        _min_w = (BLEND_CFG.get("peak_min_weight_by_pos") or {}).get(pos)
+    if _min_w:
+        _cand = [t for t in _cand if t[1] >= float(_min_w)]
     top = sorted(_cand, key=lambda t: t[2], reverse=True)[:k]
     prod_leg = next((t for t in priced if t[0] == "production"), None)
     if prod_leg is not None and prod_leg not in top:
@@ -4460,6 +4638,15 @@ def score_prospect(
             athleticism_score = 60.0 + (_r - 60.0) * 0.70
         else:
             athleticism_score = 77.5 + (_r - 85.0) * 0.90
+    # v3.12 (RB-2b change 3): at RB the transformed value is then
+    # re-anchored to the frozen RB pool's percentile (see
+    # RB_ATH_POOL): the leg's value becomes where the print sits
+    # among priced RBs, so an elite print prices elite (Barkley's
+    # 73.49 -> 89.25) instead of mid-pack. RB only; the payload
+    # and the blend read the same re-anchored value, like the
+    # competition discount's contract.
+    if pos == "RB" and athleticism_score is not None:
+        athleticism_score = _rb_ath_reanchor(athleticism_score)
     # v3.6 (round-2 audit F15): the complete-mode athleticism floor is
     # DELETED. It imputed a constant 67.0 to untested players with
     # production >= 90 and breakout >= 75 - the one place the model
@@ -4737,6 +4924,15 @@ def score_prospect(
         _priced.append(("experience", _weights["experience"],
                         float(experience_score)))
 
+    # v3.12 (RB-2b changes 2 + 5): the RB priced list gets the
+    # funding deltas, the p40 missing-athleticism fill and the
+    # asymmetric receiving leg (see _rb2b_priced_list). The
+    # payload legs are untouched: a filled or absent leg still
+    # reads None in the payload, so the UI hides what was never
+    # measured - the fill is a blend treatment, not a claim.
+    if pos == "RB":
+        _priced = _rb2b_priced_list(_priced, seasons, pos_weights)
+
     # v3.11 round 2 (TRIM_MEASURED_CFG): the trim forgives absence,
     # not measured weakness. When the profile carries at least one
     # role (featured) season, utilization was priced from the full
@@ -4756,6 +4952,17 @@ def score_prospect(
     if TRIM_MEASURED_CFG.get("enabled"):
         if any(_is_role_season(_s, pos) for _s in seasons):
             _trim_block = tuple(TRIM_MEASURED_CFG.get("legs") or ())
+    # v3.12 (RB-2b change 4): at RB, efficiency is trim-protected
+    # outright. The gated trim pool-normally deletes the one
+    # skeptical leg at RB - efficiency was the trim drop for
+    # Abanikanda (69.35 -> contributed 0.00), Hall and Barkley -
+    # so the designated skeptic was systematically the leg the
+    # blend forgave. Measured performance legs were already
+    # untrimmable under TRIM_MEASURED_CFG when a role season
+    # exists; at RB the protection is unconditional, so the
+    # skeptic is paid in the mean always.
+    if pos == "RB":
+        _trim_block = tuple(_trim_block) + ("efficiency",)
 
     prospect_score = _blend_grade(_priced, pos,
                                   allow_peak=not _anchor_perf,
