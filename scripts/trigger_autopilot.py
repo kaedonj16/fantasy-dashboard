@@ -7,8 +7,11 @@ secret-gated /api/cron/autopilot hook, which builds plans for every
 usable league with Autopilot on, executes Auto leagues, and queues
 Approve leagues with a "moves waiting" notification.
 
-Runs Thu evening ET (before TNF lineups lock) and Sun ~12:30 ET
-(before the early slate), per render.yaml.
+The render.yaml cron services fire at every candidate trigger time
+the slate-derived windows can need (the legacy Thu-evening and
+Sunday passes plus weekday/weekend slate specials); the web endpoint
+due-gates each firing against the week's real schedule, so a firing
+with no window due is a cheap no-op.
 
 Env: APP_URL (web service base URL), CRON_SECRET (shared with the
 web service). Stdlib only; no project imports.

@@ -13,11 +13,15 @@ execution time against fresh reads, never trusted from plan time:
    error. If it differs from the plan's snapshot in any other way, the
    plan is discarded as superseded (guardrail 9) and nothing is written.
 3. Per-group revalidation (guardrail 6): every item's player is still
-   rostered at the planned from_slot, is not lineup-locked now, is
-   eligible for the target slot, and no group benches a protected
-   player. A group that fails revalidation is audited "failed" and
-   excluded; the rest still execute. Nothing is ever silently swapped
-   for another move.
+   rostered at the planned from_slot, is not lineup-locked now (ESPN's
+   flag, or his NFL team's game has kicked off per the real slate in
+   autopilot_schedule), is eligible for the target slot, and no group
+   benches a protected player. A group that fails revalidation is
+   audited "failed" and excluded; the rest still execute. Nothing is
+   ever silently swapped for another move. A lock alone never
+   supersedes the plan: locking does not change the roster snapshot,
+   so a group that locked since planning is skipped here while the
+   surviving groups still write.
 4. Credentials resolve for the acting account only (inside
    espn_writes); one ROSTER/LINEUP transaction carries all surviving
    groups' items. A rejection stops everything: audit "failed" with
@@ -68,7 +72,7 @@ def _audit_group(account_id, platform, league_id, season, plan, action, group,
 
 def execute_plan(account_id, platform, league_id, season, plan_id, *,
                  accepted_groups: Optional[Sequence[int]] = None,
-                 transport=None) -> Dict[str, Any]:
+                 transport=None, now=None) -> Dict[str, Any]:
     """Execute a stored plan. Returns a per-group outcome report.
 
     ``accepted_groups``: indexes into the plan's swap list. Required in
@@ -161,6 +165,41 @@ def execute_plan(account_id, platform, league_id, season, plan_id, *,
     # --- Per-group revalidation (guardrail 6 + protected list) ----------
     entries = {e["player_id"]: e for e in state["entries"]}
     protected: Set[int] = set(settings["protected_player_ids"] or [])
+    # Schedule locks: teams whose game has kicked off by execution time,
+    # from the real slate. ESPN's lineupLocked normally says the same
+    # thing; the slate catches any lag in ESPN's flag. Any failure to
+    # load the slate leaves the set empty (ESPN's flags still apply).
+    sched_locked_teams: Set[str] = set()
+    try:
+        from datetime import datetime, timezone
+
+        from dashboard_services import autopilot_schedule
+        from dashboard_services.providers.espn_api import ESPN_PROTEAMID_TO_ABBR
+        from utils.nfl import norm_sched_team
+
+        exec_now = now or datetime.now(timezone.utc)
+        if exec_now.tzinfo is None:
+            exec_now = exec_now.replace(tzinfo=timezone.utc)
+        sched_locked_teams = autopilot_schedule.schedule_locked_teams(
+            int(season), int(plan["scoring_period"]), exec_now
+        )
+    except Exception:
+        logger.debug("autopilot execute schedule locks unavailable",
+                     exc_info=True)
+        sched_locked_teams = set()
+        ESPN_PROTEAMID_TO_ABBR = {}
+        def norm_sched_team(t):  # type: ignore[misc]
+            return str(t or "").upper().strip()
+
+    def _sched_locked(entry: dict) -> bool:
+        if not sched_locked_teams:
+            return False
+        raw = str(entry.get("team") or "").strip()
+        if raw.lstrip("-").isdigit():
+            abbr = ESPN_PROTEAMID_TO_ABBR.get(int(raw))
+            return bool(abbr) and norm_sched_team(abbr) in sched_locked_teams
+        return norm_sched_team(raw) in sched_locked_teams
+
     live_groups: List[dict] = []
     outcomes: List[Dict[str, Any]] = []
     for group in chosen:
@@ -175,6 +214,10 @@ def execute_plan(account_id, platform, league_id, season, plan_id, *,
                 break
             if entry["locked"]:
                 problem = "Player's game has started; the player is locked."
+                break
+            if _sched_locked(entry):
+                problem = ("Player's game has kicked off (per the NFL "
+                           "schedule); the player is locked.")
                 break
             if int(item["to_slot"]) != BENCH_SLOT \
                     and int(item["to_slot"]) not in entry["eligible_slots"]:

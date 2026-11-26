@@ -280,7 +280,11 @@ def _run_schedule_background():
 @autopilot_bp.route("/api/cron/autopilot", methods=["POST"])
 @limiter.limit("60 per minute")
 def api_cron_autopilot():
-    """Scheduled Autopilot pass (Thu evening + Sun ~12:30 ET crons).
+    """Scheduled Autopilot pass (the render.yaml autopilot crons).
+
+    The pass due-gates against the week's real slate in
+    autopilot_schedule: leagues run only inside a due window that has
+    not been served yet, so the extra candidate firings are no-ops.
 
     Answers 202 immediately and runs on a background thread, with the
     same non-blocking overlap guard as /api/cron/notifications, so a

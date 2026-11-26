@@ -380,6 +380,34 @@ def get_open_plan(account_id, platform, league_id, season) -> Optional[Dict[str,
     return _plan_from_row(row)
 
 
+def plan_exists_since(account_id, platform, league_id, season,
+                      scoring_period, since, *, statuses=None) -> bool:
+    """Whether any plan exists for the league + scoring period built
+    at or after ``since`` (optionally restricted to plan statuses).
+
+    The scheduler's served-window check reads through this: a plan
+    built inside a due window is the record that the window's pass
+    happened, so no parallel run-tracking table exists.
+    """
+    init_autopilot_tables()
+    sql = (
+        "SELECT 1 FROM autopilot_plans"
+        " WHERE account_id = %s AND platform = %s AND league_id = %s"
+        " AND season = %s AND scoring_period = %s AND created_at >= %s"
+    )
+    params: List[Any] = [
+        int(account_id), str(platform), str(league_id), int(season),
+        int(scoring_period), since,
+    ]
+    if statuses:
+        sql += " AND status IN (" + ", ".join(["%s"] * len(statuses)) + ")"
+        params.extend(str(s) for s in statuses)
+    sql += " LIMIT 1"
+    with _conn() as conn:
+        row = conn.execute(sql, params).fetchone()
+    return row is not None
+
+
 def set_plan_status(plan_id, status: str) -> None:
     if status not in PLAN_STATUSES:
         raise ValueError(f"Invalid plan status: {status!r}")

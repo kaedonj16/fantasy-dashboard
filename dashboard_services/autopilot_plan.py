@@ -14,6 +14,13 @@ Guardrails applied at plan time (re-checked again at execution):
 
 - Locked players (ESPN ``lineupLocked``) are pinned: their slot instance
   leaves the optimizer entirely, so no move can touch them (guardrail 6).
+- Schedule-locked players are pinned the same way: a player whose NFL
+  team's game has kicked off by plan time (per the real slate in
+  autopilot_schedule, mapped through his ESPN proTeamId / bundle team)
+  is locked for planning even when ESPN's flag has not caught up, and
+  a schedule-locked bench player is never promoted. This is what keeps
+  a Thursday-morning plan sane in Thanksgiving week, when a Wednesday
+  game is already final and three more kickoffs land before Sunday.
 - Protected players are never benched by a plan (Kaedon's Phase 1
   decision): a protected starter is pinned to his slot. A protected bench
   player may still be promoted; protection binds benching and drops only.
@@ -295,7 +302,7 @@ def _group_items(items: List[Dict[str, Any]], by_pid: Dict[int, dict]) -> List[D
 
 
 def build_plan(account_id, platform, league_id, season, *, transport=None,
-               persist: bool = True) -> Dict[str, Any]:
+               persist: bool = True, now=None) -> Dict[str, Any]:
     """Build (and by default persist) the current Autopilot plan.
 
     Returns a dict with a ``status``: "off" / "paused" / "kill_switch"
@@ -315,6 +322,7 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
         return {"status": "lineups_disabled", "swaps": []}
 
     from dashboard_services.providers.espn_api import (
+        ESPN_PROTEAMID_TO_ABBR,
         _espn_to_canon_cached,
         resolve_espn_player_id,
     )
@@ -325,6 +333,38 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
     )
     payload = state["payload"]
     period = state["scoring_period_id"]
+
+    # --- Schedule locks --------------------------------------------------
+    # Teams whose game has kicked off by plan time, from the real slate.
+    # Any failure (or no slate) leaves the set empty: ESPN's own lock
+    # flags still apply, and an unknown kickoff never locks a player.
+    from datetime import datetime, timezone
+
+    plan_now = now or datetime.now(timezone.utc)
+    if plan_now.tzinfo is None:
+        plan_now = plan_now.replace(tzinfo=timezone.utc)
+    sched_locked_teams: Set[str] = set()
+    try:
+        from dashboard_services import autopilot_schedule
+
+        sched_locked_teams = autopilot_schedule.schedule_locked_teams(
+            int(season), int(period), plan_now
+        )
+    except Exception:
+        logger.debug("autopilot schedule locks unavailable", exc_info=True)
+    try:
+        from utils.nfl import norm_sched_team
+    except Exception:
+        def norm_sched_team(t):  # type: ignore[misc]
+            return str(t or "").upper().strip()
+
+    def _entry_team_code(entry: dict, bundle_team: str) -> str:
+        raw = str(entry.get("team") or "").strip()
+        if raw.lstrip("-").isdigit():
+            abbr = ESPN_PROTEAMID_TO_ABBR.get(int(raw))
+            if abbr:
+                return norm_sched_team(abbr)
+        return norm_sched_team(bundle_team)
     entries = state["entries"]
     globals_ = _league_globals_from_payload(payload)
     roster_positions = globals_["roster_positions"]
@@ -363,6 +403,7 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
         )
         scored = _player_score(canon, bundles, int(season), live_status) if canon else None
         bundle = bundles.get(str(canon)) if canon else None
+        team_code = _entry_team_code(e, str((bundle or {}).get("team") or ""))
         by_pid[e["player_id"]] = {
             "entry": e,
             "canon_id": canon,
@@ -371,7 +412,8 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
             "score": (scored or {}).get("score"),
             "excluded": bool((scored or {}).get("excluded")),
             "on_bye": bool((bundle or {}).get("on_bye")),
-            "team": str((bundle or {}).get("team") or ""),
+            "team": team_code,
+            "sched_locked": bool(team_code) and team_code in sched_locked_teams,
             "injury_status": live_status or (bundle or {}).get("injury_status") or "",
         }
 
@@ -396,6 +438,8 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
 
     def _pinned(entry: dict) -> bool:
         if entry["locked"]:
+            return True
+        if by_pid[entry["player_id"]]["sched_locked"]:
             return True
         if entry["player_id"] in protected:
             return True
@@ -466,6 +510,8 @@ def build_plan(account_id, platform, league_id, season, *, transport=None,
         info = by_pid[e["player_id"]]
         if info["canon_id"] is None or info["score"] is None:
             continue
+        if info["sched_locked"]:
+            continue  # his game has kicked off; he cannot be promoted
         if info["excluded"] or float(info["score"]) <= 0:
             continue  # never promote an excluded or zero-score bench player
         pts_map[info["canon_id"]] = float(info["score"])
