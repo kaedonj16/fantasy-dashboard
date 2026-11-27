@@ -74,6 +74,29 @@ def test_jump_bar_is_sticky_with_scrollspy_and_pruning():
     assert "scroll-margin-top" in block
 
 
+def test_jump_chips_scroll_in_place_without_navigation():
+    src = _page()
+    # Chips stay anchors with real hrefs: pruning, the injury badge and
+    # scrollspy all read the href, and a chip still works without JS.
+    assert 'class="dash-jump-chip" href="#{_target}"' in src
+    # The click is intercepted and defaulted, so no hash change, no
+    # history entry, and no reload / softNav re-render follows a tap.
+    handler = src[
+        src.index("Jump to chips scroll in place only"):
+        src.index("Scrollspy: the chip for the section nearest")
+    ]
+    assert 'nav.addEventListener("click"' in handler
+    assert 'closest(".dash-jump-chip")' in handler
+    assert "e.preventDefault()" in handler
+    assert 'getAttribute("href")' in handler
+    assert "history.pushState" not in handler
+    assert "location" not in handler
+    # Scrolling uses scrollIntoView, which honours the targets'
+    # scroll-margin-top (sticky chrome plus the jump bar itself).
+    assert "scrollIntoView" in handler
+    assert "scroll-margin-top" in _mobile_reorg_block(_css())
+
+
 def test_injury_count_comes_from_rendered_rows():
     src = _page()
     assert '_injury_watch_html.count("cc-inj-row")' in src
