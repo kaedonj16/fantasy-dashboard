@@ -12,6 +12,12 @@ CHANGELOG = [
     },
     {
         "date": "2026-11-26",
+        "tag": "fix",
+        "text": "The refreshing popup now shows for every Refresh Data press, even if a background refresh is already running, and for the per-card retry buttons on My Leagues and ScoreZone's refresh timer too. The page behind the popup no longer scrolls while it is up.",
+        "link": "/portfolio"
+    },
+    {
+        "date": "2026-11-26",
         "tag": "update",
         "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your place in your division.",
         "link": "/dashboard"

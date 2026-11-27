@@ -63,6 +63,7 @@ def test_lock_module_watches_the_whole_overlay_family():
         ".team-modal-overlay",     # team modal / drawer
         ".for-modal-overlay",      # Front Office modal
         ".rzm-modal-overlay",      # ScoreZone / redzone modal
+        "#brRefreshOverlay",       # refresh-data loading modal
         ".modal-overlay",          # generic page modals
         ".signin-modal-overlay",   # sign-in / claim modal
         ".scm-overlay",            # share-card modals
@@ -131,7 +132,8 @@ def test_css_stops_scroll_chaining_at_overlay_boundaries():
     shells = _rule(section, ".player-modal-overlay,")
     assert "overscroll-behavior: none" in shells
     for selector in (".team-modal-overlay", ".for-modal-overlay",
-                     ".rzm-modal-overlay", ".modal-overlay",
+                     ".rzm-modal-overlay", ".br-refresh-modal-overlay",
+                     ".modal-overlay",
                      "#tiTradesOverlay", ".br-sheet-scrim",
                      ".rz-bs-backdrop", ".nt-sheet-backdrop",
                      ".br-asst-scrim"):

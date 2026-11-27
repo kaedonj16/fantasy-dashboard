@@ -5286,6 +5286,17 @@ function showLoginGate(target, opts) {
     setRefreshModalState('failure', { rateLimit: !!rateLimit });
   }
 
+  // Settle the modal a user press opened over an already-running silent
+  // auto-revalidate (the doRefresh _busy branch): success gets the brief
+  // up-to-date card, failure gets the failure card (Try again starts a
+  // real manual run), and no outcome (the run was superseded or the
+  // user navigated away mid-run) just closes it.
+  function settleTapRefreshModal(outcome) {
+    if (outcome === 'success') showRefreshSuccess(false);
+    else if (outcome === 'fail') showRefreshFailure(false, function () { doRefresh(); });
+    else showRefreshOverlay(false);
+  }
+
   function showRefreshOverlay(on, opts) {
     opts = opts || {};
     var el = document.getElementById('brRefreshOverlay');
@@ -5536,6 +5547,12 @@ function showLoginGate(target, opts) {
       if (!doRefresh._manual) {
         doRefresh._tapFeedback = true;
         setRefreshingLabel();
+        // The press must see the loading modal too: show it for the
+        // in-flight silent run, whose settle path (see autoRevalidate)
+        // closes it with the success/failure card via _tapFeedback.
+        // skipEscape: the silent run keeps its own watchdog, and the
+        // escape's Cancel would abort a run the user did not start.
+        showRefreshOverlay(true, { skipEscape: true });
       }
       return;
     }
@@ -5811,6 +5828,11 @@ function showLoginGate(target, opts) {
     // swap is the "app sent me back to the dashboard" bounce. The expire
     // still warms the league cache, so the pass is not wasted.
     var startHref = location.href;
+    // Outcome for a user press that upgraded this silent run to the
+    // modal (the doRefresh _busy branch): null until the run actually
+    // completes its work, so a superseded/navigated-away run just
+    // closes the modal instead of claiming a success it did not earn.
+    var tapOutcome = null;
     try {
       await expireLeague(controller ? controller.signal : undefined);
       if (runId !== doRefresh._run) return;
@@ -5824,9 +5846,11 @@ function showLoginGate(target, opts) {
       if (!autoSwapBlocked() && canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
         updateLabels();
       }
+      tapOutcome = 'success';
     } catch (e) {
       // Silent: keep the cached paint. The freshness pill still shows its age
       // and the manual Refresh remains available.
+      tapOutcome = 'fail';
     } finally {
       if (runId === doRefresh._run) {
         doRefresh._busy = false;
@@ -5839,6 +5863,10 @@ function showLoginGate(target, opts) {
         if (doRefresh._tapFeedback) {
           doRefresh._tapFeedback = false;
           updateLabels();
+          // The tap also opened the loading modal over this run (see
+          // the doRefresh _busy branch): settle it with this run's
+          // outcome instead of leaving it up past the run's end.
+          settleTapRefreshModal(tapOutcome);
         }
       }
     }
@@ -18695,9 +18723,13 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
     const ctx = readCtxFromRefreshBtn(refreshBtn);
     if (!ctx.league || !ctx.page || !ctx.platform || !ctx.season) {
       console.error("Missing league/page/platform/season for refresh.", ctx);
+      // A press must never fail silently: surface the shared refresh
+      // modal's failure state instead of a console-only dead end.
+      if (window.brRefreshModal) window.brRefreshModal.fail();
       return;
     }
     if (typeof window.brRefreshLeague === 'function') window.brRefreshLeague();
+    else if (window.brRefreshModal) window.brRefreshModal.fail();
   });
 })();
 
@@ -23407,6 +23439,7 @@ if (typeof window !== 'undefined') {
     '.team-modal-overlay',     // team modal / drawer
     '.for-modal-overlay',      // Front Office report modal
     '.rzm-modal-overlay',      // ScoreZone / redzone modal
+    '#brRefreshOverlay',       // refresh-data loading modal (display toggled)
     '.modal-overlay',          // generic page modals (trade login, pages)
     '.modal.open',
     '.signin-modal-overlay',   // sign-in / claim modal (display toggled)
@@ -38312,7 +38345,24 @@ window.brRzmOpenModal = function (payload, ctx) { return window.brRzm.openModal(
     document.addEventListener('click', function (event) {
       var button = event.target.closest && event.target.closest('[data-summary-retry],[data-matchup-retry]');
       if (!button || !owner.alive() || !owner.root.contains(button)) return;
-      button.hidden = true; schedule(owner, button.closest('.pf-lg-card'), 0, true);
+      button.hidden = true;
+      var card = button.closest && button.closest('.pf-lg-card');
+      if (!card) { schedule(owner, card, 0, true); return; }
+      // A per-card Retry press is a user-initiated refresh of that card:
+      // it must show the shared loading modal like every other Refresh
+      // Data press, and settle it from this card's terminal tracker
+      // (fireTrackers fires exactly once, on a terminal settle only, so
+      // the modal never closes on an intermediate pending re-poll).
+      var settleCardModal = function (result) {
+        if (!window.brRefreshModal) return;
+        if (result && result.summary && result.matchup && !result.pending) window.brRefreshModal.succeed();
+        else window.brRefreshModal.fail(runCardRefresh);
+      };
+      function runCardRefresh() {
+        if (window.brRefreshModal) window.brRefreshModal.show();
+        schedule(owner, card, 0, true, settleCardModal);
+      }
+      runCardRefresh();
     }, owner.controller ? { signal: owner.controller.signal } : false);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) pump(owner); }, owner.controller ? { signal: owner.controller.signal } : false);
     window.addEventListener('pagehide', function () { destroy(owner); }, owner.controller ? { once: true, signal: owner.controller.signal } : { once: true });
