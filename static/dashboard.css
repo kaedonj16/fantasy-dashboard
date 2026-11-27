@@ -45146,9 +45146,13 @@ a.rz-demo-link:hover {
    trail of uniform play dots ending at a solid ball. Static by design -- no
    animation. The yard-number row reuses .rz-field-scale. */
 .rz-fb { margin-top: 10px; }
-/* Trapezoid stage: the plane lays back at 49deg so its far edge recedes
-   and narrows; the stage's side gutters hold the goal posts OUTSIDE the
-   plane, and its top padding holds their uprights above the far edge.
+/* Trapezoid stage: geometry ported value for value from the approved
+   mock (2026-11-26) -- stage 230px tall (200px at phone width), plane
+   inset 6% a side (10% on phones), top 38px / bottom 18px (32/14 on
+   phones), laying back at 49deg on a 620px perspective with a centre
+   transform origin, so the projected quad matches the mock's: far edge
+   receded and narrowed, near edge forward and widened. The inset
+   margins hold the goal posts OUTSIDE the plane.
    The perspective MUST live on .rz-fb-stage, the plane's direct parent:
    CSS perspective only affects an element's children, so when it sat on
    the .rz-fb-persp grandparent (with a flat, non-preserve-3d stage in
@@ -45156,11 +45160,13 @@ a.rz-demo-link:hover {
    rectangle with vertical sides, no trapezoid at all (Kaedon's live
    screenshot, 2026-11-26). The isolated-snippet QA missed it because it
    measured the foreshortened height and never the corner quads. */
-.rz-fb-stage { position: relative; padding-top: 20px; perspective: 620px; }
+.rz-fb-stage { position: relative; height: 230px; perspective: 620px; }
 .rz-fb-field {
-    position: relative;
-    height: 74px;
-    margin: 0 22px;
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    top: 38px;
+    bottom: 18px;
     border-radius: 10px;
     overflow: hidden;
     border: 1px solid var(--rz-border, var(--border));
@@ -45168,43 +45174,122 @@ a.rz-demo-link:hover {
         color-mix(in srgb, var(--rz-text, var(--text)) 5%, var(--rz-card, var(--card))) 0 10%,
         color-mix(in srgb, var(--rz-text, var(--text)) 11%, var(--rz-card, var(--card))) 10% 20%);
     transform: rotateX(49deg);
-    transform-origin: bottom;
+    transform-origin: 50% 50%;
     box-shadow: 0 14px 18px -10px rgba(15, 36, 64, .35);
 }
-/* Goal posts: one clean gold shape (two uprights, a shallow U, a single
-   stem ending in a round cap -- no foot, no pad). Anchored to the
-   PROJECTED trapezoid, not the layout box, and verified against the
-   rendered corner quads at phone and desktop widths: with the 620px
-   perspective actually reaching the plane, its slanted back edge pulls
-   in from the layout edge by ~4.1% of the field width at the top corner
-   and 0 at the bottom corner (the transform origin), so the back line's
-   midpoint sits ~2.1% of the field width in from the 22px gutter edge.
-   left/right therefore centre the post (translateX centring, so the
-   value IS the stem x) on that midpoint, and top puts the stem tip --
-   the path's y=56 of 60 -- exactly on it, at the end zone's projected
-   vertical centre. The post body stands outside the turf, the uprights
-   rise just above the far edge, and the stem never crosses the end-zone
-   lettering. The posts render in a layer above the plane (z-index 6)
-   so the plane's slanted edge can never clip them. One rule set for
-   every width (the geometry is %-based), so no media query can lose a
-   specificity fight and leave the pair asymmetric. */
-.rz-fb-post { position: absolute; top: 34px; width: 20px; height: 38px; z-index: 6; pointer-events: none; }
-.rz-fb-post-l { left: calc(21px + 2.1%); transform: translateX(-50%); }
-.rz-fb-post-r { right: calc(21px + 2.1%); transform: translateX(50%); }
+/* Field slab: the field is a physical slab, not a sheet (Kaedon,
+   2026-11-27, from ESPN's board, which shows a dark side face under
+   the surface). A second plane-sized layer sits behind the field
+   with the same box and the same rotateX, shifted 10px down IN
+   PLANE SPACE and scaled 1.02 in plane space: the shift (the
+   translateY runs in the plane's own frame) drops the copy's rim
+   past the field's near edge as a ~9px dark face, and the scale is
+   what opens the side faces -- a pure in-plane shift slides the
+   copy along its own side lines and leaves the slanted sides
+   collinear, so the sides need the width. The playing surface
+   does not move: the slab is behind the plane (earlier in DOM
+   order, no z-index) and the field's opaque background hides it
+   wherever they overlap. No stage change was needed: the
+   projected near edge sits ~39px above the stage bottom at phone
+   width, so the rim clears the yard scale with room to spare and
+   the post anchors (measured from the stage) are untouched. */
+.rz-fb-slab {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    top: 38px;
+    bottom: 18px;
+    border-radius: 10px;
+    background: #253242;
+    transform: rotateX(49deg) translateY(10px) scale(1.02);
+    transform-origin: 50% 50%;
+}
+/* Air layer: the pass flight lives here, in STAGE space above the
+   tilted plane, so the plane's rotateX cannot foreshorten its dots
+   into flat ellipses on the turf (the mock's air layer; Kaedon,
+   2026-11-26). The layer takes the plane's exact layout box (same
+   insets / top / bottom; phone values in the phone block below) but
+   is NOT transformed. A ground spot at the plane's centre height
+   projects to its layout position (perspective scale is 1.0 there),
+   so plane % x maps 1:1 into this layer and the ground line sits at
+   its 50% height: arc dots are positioned left in plane % and top in
+   calc(50% - lift px), and stay round at any width. Under the posts
+   (z 6), over the plane. This base rule must stay BEFORE the phone
+   block: at equal specificity the later rule wins, so a base rule
+   placed after the block would silently override the phone geometry
+   (the same cascade trap as the mock's phone post bug). */
+.rz-fb-air { position: absolute; left: 6%; right: 6%; top: 38px; bottom: 18px; z-index: 5; pointer-events: none; }
+/* Dark theme field colours, from the approved mock (2026-11-26): solid
+   alternating bands #1c3049 / #16273c on the mock's band phase (bands are
+   1/12 of the plane, starting at the goal lines, so the phase is offset
+   one band from the plane edge), the mock's field border and shadow. */
+:root[data-theme="dark"] .rz-fb-field {
+    border-color: #2c4258;
+    background: repeating-linear-gradient(90deg, #16273c 0 8.333%, #1c3049 8.333% 16.667%);
+    box-shadow: 0 22px 30px -12px rgba(0, 0, 0, .65), 0 4px 10px rgba(0, 0, 0, .35);
+}
+/* Slab edge in dark mode: a darker cut of the field's border tone,
+   never team-tinted. */
+:root[data-theme="dark"] .rz-fb-slab { background: #0e1926; }
+/* Goal posts: ESPN's PROFILE post (Kaedon, 2026-11-27, from his
+   ESPN screenshot; the mock's flat front-on post and the yawed fork
+   before this both read wrong). Seen from the side, facing along
+   the field: two thin uprights nearly overlapping, the far upright
+   a touch higher and offset away from the field, the near upright
+   lower, bottoms joined by the crossbar, one short stem with a
+   gentle sweep back down to a small dark-grey base pad. Size is
+   the variant-C envelope (~40px tall at phone width), 38.4x72px
+   box on desktop and 32x60px at phone width. Anchoring is the
+   mock's: the plane is inset 6% (10% on phones), and each post is
+   placed so its ground anchor (the pad's middle, the path's y=55.5
+   of 60) lands on the midpoint of its end zone's back line -- at
+   the plane's vertical centre the perspective scale is 1.0, so
+   that midpoint sits at the plane's layout side edge, at the
+   plane's centre height (stage 125px desktop / 109px phone). The
+   post body, pad included, stands outside the turf in the inset
+   margin, and the uprights rise above the far edge. The bars are
+   one flat stroke of gold with no shading and no drop shadow
+   (Kaedon kept the depth, rejected the shading), flat to their
+   edges like ESPN's. The posts render above the plane
+   (z-index 6) so the slanted edge can never clip them. The phone
+   offsets are declared on the .rz-fb-post-l/-r rules themselves
+   so no specificity fight can leave the pair asymmetric (the
+   mock's own earlier bug). */
+.rz-fb-post { position: absolute; top: 58px; width: 38.4px; height: 72px; z-index: 6; pointer-events: none; }
+.rz-fb-post-l { left: calc(6% - 22px); }
+.rz-fb-post-r { right: calc(6% - 22px); }
 /* The yard scale under the board aligns to the inset plane, not the
    board's full width. */
-.rz-fb > .rz-field-scale { margin-left: 22px; margin-right: 22px; }
-.rz-fb-ez { position: absolute; top: 0; bottom: 0; width: 10%; }
+.rz-fb > .rz-field-scale { margin-left: 6%; margin-right: 6%; }
+@media (max-width: 640px) {
+    /* Phone geometry, the mock's values: shorter stage, plane inset
+       10% a side, 32x60 posts on the 10% anchor. */
+    .rz-fb-stage { height: 200px; }
+    .rz-fb-field { left: 10%; right: 10%; top: 32px; bottom: 14px; }
+    .rz-fb-slab { left: 10%; right: 10%; top: 32px; bottom: 14px; }
+    .rz-fb-air { left: 10%; right: 10%; top: 32px; bottom: 14px; }
+    .rz-fb-post { top: 53px; height: 60px; width: 32px; }
+    .rz-fb-post-l { left: calc(10% - 20px); }
+    .rz-fb-post-r { right: calc(10% - 20px); }
+    .rz-fb > .rz-field-scale { margin-left: 10%; margin-right: 10%; }
+}
+.rz-fb-ez { position: absolute; top: 0; bottom: 0; width: 8.333%; }
 .rz-fb-ez > span {
     position: absolute; inset: 0; display: grid; place-items: center;
     font-size: 10px; font-weight: 900; letter-spacing: .14em;
     color: var(--rz-text, var(--text)); opacity: .55; writing-mode: vertical-rl;
 }
+/* End-zone label facing, the mock's scheme: both labels are
+   vertical-rl (reading top-to-bottom), and the LEFT label is rotated
+   180deg so it reads bottom-to-top -- the mock's PACKERS reads up,
+   its RAMS reads down. With no side distinction both labels read
+   top-to-bottom and the left one faces the wrong way (Kaedon,
+   2026-11-26). */
+.rz-fb-ez-l > span { transform: rotate(180deg); }
 /* Dark theme: the EZ abbreviation rides on a lifted tint (dark primaries are
    lightened in the renderer); at the light label's 55% it still washes out,
    so bump opacity until it reads clearly against its tint. */
 :root[data-theme="dark"] .rz-fb-ez > span { opacity: .92; }
-.rz-fb-shade { position: absolute; top: 0; bottom: 0; }
 .rz-fb-seg { position: absolute; top: 50%; transform: translateY(-50%); background: var(--rz-fb-color); border-radius: 99px; z-index: 2; }
 .rz-fb-dot { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: var(--rz-fb-color); transform: translate(-50%, -50%); z-index: 4; }
 /* Pass/run cue (field board only): a pass play's dot goes hollow -- same 7px
@@ -45213,10 +45298,10 @@ a.rz-demo-link:hover {
    stripe tones) so the trail does not show through. Runs stay solid. */
 .rz-fb-dot.is-pass { background: color-mix(in srgb, var(--rz-text, var(--text)) 8%, var(--rz-card, var(--card))); border: 2px solid var(--rz-fb-color); box-sizing: border-box; }
 /* Pass depth: a pass leaves the ground. Its segment is drawn as a thin
-   dotted arc of small team-colour dots lifted off the plane (in the
-   plane's own coordinates, so the endpoints land exactly on the throw
-   spot and the play's END spot -- there is no catch point), over a soft
-   blurred shadow ellipse on the turf beneath the flight. Runs keep
+   dotted arc of small team-colour dots lifted off the turf in the air
+   layer (endpoints exactly on the throw spot and the play's END
+   spot -- there is no catch point), over a soft blurred shadow
+   ellipse that stays on the plane beneath the flight. Runs keep
    their flat ground segment (.rz-fb-seg). */
 .rz-fb-arcdot { position: absolute; width: 2.5px; height: 2.5px; border-radius: 50%; background: var(--rz-fb-color); opacity: .9; transform: translate(-50%, -50%); z-index: 3; pointer-events: none; }
 .rz-fb-arcshadow { position: absolute; top: 52%; height: 6px; transform: translateY(-50%); background: rgba(2, 6, 23, .28); filter: blur(3px); border-radius: 50%; z-index: 1; pointer-events: none; }
@@ -45231,7 +45316,7 @@ a.rz-demo-link:hover {
 .rz-fb-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot-live); flex: 0 0 auto; }
 /* TD celebration pieces: the flash overlay rests invisible; the pill is the
    board's only TD announcement. */
-.rz-fb-tdflash { position: absolute; top: 0; bottom: 0; width: 10%; opacity: 0; z-index: 1; }
+.rz-fb-tdflash { position: absolute; top: 0; bottom: 0; width: 8.333%; opacity: 0; z-index: 1; }
 .rz-fb-td { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); background: var(--rz-fb-color); color: #fff; font-size: 10px; font-weight: 900; letter-spacing: .08em; padding: 1.5px 7px; border-radius: 99px; white-space: nowrap; z-index: 6; }
 /* Live-arrival animation. The rz-fb-anim classes are emitted only on the
    render that carries exactly one new play on a live update (bulk loads,
@@ -45544,6 +45629,28 @@ a.rz-demo-link:hover {
 .rz-game-pill.is-selected .rz-gp-score { color: var(--on-accent); }
 .rz-game-pill.is-selected .rz-gp-logo-txt { color: var(--on-accent); opacity: .75; }
 .rz-game-pill.is-selected .rz-gp-status { color: #86efac; }
+/* Dark theme selected pill (approved mock, 2026-11-26): in dark mode
+   --accent flips to light blue #60a5fa, so the generic selected fill
+   above renders a solid light-blue pill with the live clock's green
+   sitting on it -- unreadable (Kaedon's live screenshots). The mock's
+   selected state is dark-native: deep navy fill #1d3a5f, bright blue
+   border #5b93e6 with its 1px ring, white scores, the @ in #b9cde4,
+   status #dbe7f5, and the live status in #4ade80 on the dark fill.
+   Light mode is untouched: there --accent is navy #122d4b with white
+   on-accent text, which already reads correctly. */
+:root[data-theme="dark"] .rz-game-pill.is-selected {
+    background: #1d3a5f;
+    border-color: #5b93e6;
+    box-shadow: 0 0 0 1px #5b93e6, 0 8px 18px -10px rgba(0, 0, 0, .7);
+    color: #ffffff;
+}
+:root[data-theme="dark"] .rz-game-pill.is-selected .rz-gp-abv,
+:root[data-theme="dark"] .rz-game-pill.is-selected .rz-gp-score,
+:root[data-theme="dark"] .rz-game-pill-all.is-selected .rz-gp-all { color: #ffffff; }
+:root[data-theme="dark"] .rz-game-pill.is-selected .rz-gp-at { color: #b9cde4; opacity: 1; }
+:root[data-theme="dark"] .rz-game-pill.is-selected .rz-gp-logo-txt { color: #ffffff; }
+:root[data-theme="dark"] .rz-game-pill.is-selected .rz-gp-status { color: #dbe7f5; }
+:root[data-theme="dark"] .rz-game-pill.is-selected.is-live .rz-gp-status { color: #4ade80; }
 /* ── Box score button + sheet (filtered-game board) ── */
 /* The button lives inside the filtered-game board, so it only exists when the
    user is filtered to one NFL game. The sheet mounts on document.body. */
@@ -62140,16 +62247,10 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     100% { transform: scale(1); opacity: 1; }
 }
 
-/* Package 2: field board depth. The attacked end zone deepens in steps at
-   the 40 / 30 / 20 and the board border warms to match. */
-.rz-fb-rzdeep { position: absolute; top: 0; bottom: 0; width: 10%; z-index: 1; opacity: 0; transition: opacity .4s ease; }
-.rz-fb-field[data-depth="1"] .rz-fb-rzdeep { opacity: .22; }
-.rz-fb-field[data-depth="2"] .rz-fb-rzdeep { opacity: .42; }
-.rz-fb-field[data-depth="3"] .rz-fb-rzdeep { opacity: .62; }
+/* Package 2: the FD line pulse only. The field carries no possession
+   shade, no attack-depth wash and no board heat border: the mock's bands
+   and end-zone tints stay clean at every drive depth. */
 .rz-nfl-board { transition: border-color .4s ease; }
-.rz-nfl-board.rz-board-heat-1 { border-color: rgba(220, 38, 38, .22); }
-.rz-nfl-board.rz-board-heat-2 { border-color: rgba(220, 38, 38, .38); }
-.rz-nfl-board.rz-board-heat-3 { border-color: rgba(220, 38, 38, .55); }
 .rz-fb-fd-pulse { animation: rz-fb-fd-pulse .9s ease-out 1.3s both; }
 @keyframes rz-fb-fd-pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
@@ -62329,7 +62430,6 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
     .rz-fb-anim-td .rz-fb-field,
     .rz-event.is-live-enter .rz-event-delta-pts,
     .rz-event.rz-td-enter .rz-event-delta-pts { animation: none; }
-    .rz-fb-rzdeep { transition: none; }
     .rz-sticky-bar { transition: none; }
     .rz-sticky-bar .mb-fld-fill, .rz-sticky-bar .mb-fld-ball, .rz-sticky-bar .mb-fld-fd { transition: none; }
     .rz-moment-card, .rz-moment-media, .rz-moment-card .rz-clip-panel.is-closing { transition: none; }

@@ -25,11 +25,17 @@ def test_package1_feed_td_enter_no_wash():
     assert "rz-delta-pop" in CSS
 
 
-def test_package2_field_depth_and_fd_pulse():
-    assert "rz-fb-rzdeep" in APP and "rz-fb-rzdeep" in CSS
-    assert 'data-depth="' in APP
+def test_package2_fd_pulse_and_no_field_washes():
+    # The yellow FD line and its arrival pulse stay (the mock has them).
     assert "rz-fb-fd-pulse" in APP and "rz-fb-fd-pulse" in CSS
-    assert "rz-board-heat-" in APP
+    # The prod-only washes are gone from the field board in both renderers:
+    # no possession shade, no attack-depth wash on the attacked end zone,
+    # no board heat border -- the mock's bands and EZ tints stay clean.
+    assert "rz-fb-shade" not in APP and "rz-fb-shade" not in SZ
+    assert "rz-fb-shade" not in CSS
+    assert "rz-fb-rzdeep" not in APP and "rz-fb-rzdeep" not in CSS
+    assert "rz-board-heat-" not in APP and "rz-board-heat-" not in CSS
+    assert 'data-depth="' not in APP
 
 
 def test_package3_game_state_classes():

@@ -35350,19 +35350,69 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
     var to = function(v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
     return '#' + to(rr) + to(gg) + to(bb);
   };
+
+  // Dark theme end zones (approved mock, 2026-11-26): a SOLID dark tint
+  // of the team's colour -- hue kept, saturation scaled to 0.62,
+  // lightness scaled to 0.82 and capped at 0.27 -- instead of the
+  // lifted colour at 35% alpha over the bands, which blended red
+  // primaries into purple-brown (KC) against the blue-grey field. The
+  // mock's end zones are opaque dark tints in this register (the Rams'
+  // #003594 lands at #173262, next to the mock's hand-set #1b3468).
+  var ezDark = function(hex) {
+    var h = String(hex).replace('#', '');
+    if (h.length !== 6) return hex;
+    var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    var d = mx - mn;
+    var s = d === 0 ? 0 : (l < 0.5 ? d / (mx + mn) : d / (2 - mx - mn));
+    var hue = 0;
+    if (d !== 0) {
+      if (mx === r) hue = ((g - b) / d) % 6;
+      else if (mx === g) hue = (b - r) / d + 2;
+      else hue = (r - g) / d + 4;
+      hue *= 60; if (hue < 0) hue += 360;
+    }
+    s *= 0.62;
+    l = Math.min(l * 0.82, 0.27);
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    var m = l - c / 2, rr = 0, gg = 0, bb = 0;
+    if (hue < 60) { rr = c; gg = x; }
+    else if (hue < 120) { rr = x; gg = c; }
+    else if (hue < 180) { gg = c; bb = x; }
+    else if (hue < 240) { gg = x; bb = c; }
+    else if (hue < 300) { rr = x; bb = c; }
+    else { rr = c; bb = x; }
+    var to = function(v) { var n2 = Math.round((v + m) * 255).toString(16); return n2.length === 1 ? '0' + n2 : n2; };
+    return '#' + to(rr) + to(gg) + to(bb);
+  };
   var tint = function(hex) {
-    if (dark) return lift(hex) + '59';
+    if (dark) return ezDark(hex);
     return hex + (lum(hex) < 66 ? '38' : '59');
   };
-  // Dark theme: the possession story (shade, trail, ball, flag) runs on the
+  // The mock hand-sets its end-zone colours as literals (--ez-gb /
+  // --ez-la in its CSS), and one of them cannot be reached by the
+  // formula above: the mock's GB green #1e3527 is built on its bright
+  // badge green #204e32 (hue 143, green channel 78), while this
+  // palette's GB primary #203731 is a grey-teal (hue 164, brightest
+  // channel 55) that any hue-preserving darkening only greys further
+  // (it lands at #1e2a26, barely green). GB therefore carries the
+  // mock's literal in dark mode -- the same method the mock uses.
+  // Every other team's formula output already sits next to the
+  // mock's register (Rams #173262 vs the mock's #1b3468).
+  var ezLiteral = { GB: '#1e3527' };
+  var ezTint = function(team, hex) {
+    if (dark && ezLiteral[team]) return ezLiteral[team];
+    return tint(hex);
+  };
+  // Dark theme: the possession story (trail, ball, flag) runs on the
   // lifted colour too -- a raw dark primary is invisible on the dark field.
+  // No possession shade washes the field: the mock's bands stay clean.
   var tcEff = dark ? lift(tc) : tc;
-  var xOf = function(a) { return 10 + a * 0.8; };
+  var xOf = function(a) { return Math.round((8.3333 + a * 0.83333) * 100) / 100; };
   var ballX = xOf(fp.spot);
-  var shade = fp.side === 'away'
-    ? '<span class="rz-fb-shade" style="left:10%;width:' + (ballX - 10) + '%;background:' + tcEff + '29"></span>'
-    : '<span class="rz-fb-shade" style="left:' + ballX + '%;width:' + (90 - ballX) + '%;background:' + tcEff + '29"></span>';
   var trail = '';
+  var air = '';
   if (drive) {
     var pts = [drive.startAbs].concat(drive.points);
     var n = pts.length - 1;
@@ -35371,24 +35421,35 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
       if (x1 === x2) continue;
       var t = n === 1 ? 1 : k / (n - 1);
       var lo = Math.min(x1, x2), hi = Math.max(x1, x2);
-      var L = Math.max(9.5, lo - (k === 0 ? 0 : 0.5));
-      var W = Math.min(90.5, hi + 0.5) - L;
+      var L = Math.max(7.833, lo - (k === 0 ? 0 : 0.5));
+      var W = Math.min(92.167, hi + 0.5) - L;
       if (drive.kinds && drive.kinds[k] === 'pass') {
         // Pass depth: the segment lifts off the plane as a dotted arc
         // from the throw spot to the play's END spot (no catch point is
-        // marked), over a soft shadow on the turf. Small team-colour
-        // dots along a parabola in the plane's own % coordinates, so
-        // the endpoints land exactly on the ground spots at any width.
+        // marked), over a soft shadow on the turf. The shadow stays in
+        // the plane; the flight itself is collected into `air` and
+        // drawn in the stage-space air layer above the plane (see
+        // .rz-fb-air), because dots drawn inside the plane are
+        // foreshortened by its rotateX into flat ellipses lying on the
+        // turf (Kaedon, 2026-11-26). The mock's flight math: a
+        // quadratic arc in screen space between the projected ground
+        // spots, lift min(20 + gain * 1.2, 54) true px. A ground spot
+        // at the plane's centre height projects to its layout position
+        // (perspective scale 1.0 there), and the air layer is the
+        // plane's own layout box untransformed, so the same % x holds
+        // and the ground line is the layer's 50% height: each dot is
+        // left in plane % and top in calc(50% - lift px), round at
+        // any width, endpoints on the throw / end spots.
         var span = Math.abs(x2 - x1);
-        var arcLift = Math.min(42, 14 + span * 1.1);
+        var arcLift = Math.min(54, 20 + Math.abs(pts[k + 1] - pts[k]) * 1.2);
         var nDots = Math.max(4, Math.min(14, Math.round(span / 1.6)));
         var arcNew = (fbAnim && k === n - 1) ? ' is-new' : '';
         trail += '<span class="rz-fb-arcshadow" style="left:' + ((lo + hi) / 2 - span * 0.35) + '%;width:' + (span * 0.7) + '%"></span>';
         for (var di = 1; di < nDots; di++) {
           var fr = di / nDots;
           var ax = x1 + (x2 - x1) * fr;
-          var ay = 50 - arcLift * 4 * fr * (1 - fr);
-          trail += '<span class="rz-fb-arcdot' + arcNew + '" style="left:' + ax.toFixed(2) + '%;top:' + ay.toFixed(2) + '%"></span>';
+          var ay = (arcLift * 4 * fr * (1 - fr)).toFixed(1);
+          air += '<span class="rz-fb-arcdot' + arcNew + '" style="left:' + ax.toFixed(2) + '%;top:calc(50% - ' + ay + 'px)"></span>';
         }
         continue;
       }
@@ -35405,13 +35466,6 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
     });
   }
   var fd = (fp.ltg != null) ? '<span class="rz-fb-fd' + ((fbAnim && fbAnim.fd) ? ' rz-fb-fd-pulse' : '') + '" style="left:' + xOf(fp.ltg) + '%"></span>' : '';
-  // Attack depth: how deep the drive has pushed toward the attacked goal.
-  // Steps at the 40 / 30 / 20 (yards to goal) deepen the attacked end
-  // zone's tint; the board border warms via the matching rz-board-heat
-  // class the game board wrapper carries.
-  var atkDepth = fp.toGoal <= 20 ? 3 : (fp.toGoal <= 30 ? 2 : (fp.toGoal <= 40 ? 1 : 0));
-  var rzDeep = atkDepth ? '<span class="rz-fb-rzdeep" style="' + (fp.side === 'away' ? 'left:90%' : 'left:0')
-    + ';background:' + tcEff + '"></span>' : '';
   var flagX = Math.min(Math.max(ballX, 15), 85);
   var pillInk = lum(tcEff) >= 66 ? ';color:#0f2440' : '';
   var flag = '<span class="rz-fb-flag" style="left:' + flagX + '%' + pillInk + '">' + esc(fp.label) + '</span>';
@@ -35429,9 +35483,44 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
   }
   // Goal posts: one clean gold shape behind each end zone (see the
   // .rz-fb-post rules in dashboard.css for the projected anchoring).
-  var postPath = '<path d="M7 3v20c0 5 4 9 9 9s9-4 9-9V3M16 32v24" fill="none" stroke="#e8a90c" stroke-width="3.4" stroke-linecap="round"/>';
-  var posts = '<svg class="rz-fb-post rz-fb-post-l" viewBox="0 0 32 60" aria-hidden="true">' + postPath + '</svg>'
-    + '<svg class="rz-fb-post rz-fb-post-r" viewBox="0 0 32 60" aria-hidden="true">' + postPath + '</svg>';
+  // The post is ESPN's PROFILE post (Kaedon, 2026-11-27, from his
+  // ESPN screenshot; the yawed front-facing fork before it read
+  // wrong): seen from the side, facing along the field -- two thin
+  // uprights in depth, the back upright on the FIELD side (x=19 on
+  // the left post) higher and the front upright on the outer side
+  // (x=11) lower, their bottoms joined by a crossbar that runs
+  // diagonally in depth (front bottom lower at y=41, back bottom
+  // higher at y=37), then one short stem with a gentle sweep back
+  // from the crossbar down to a small dark-grey base pad. The back
+  // upright's top (y=18) sits on the same angle as the crossbar:
+  // the tops drop the crossbar's own 4 units over the uprights'
+  // separation, so the U reads as one slanted piece instead of
+  // the back upright spiking past it (Kaedon, 2026-11-27: "the
+  // back post is a little too high, it should be on the same
+  // angle as the crossbar"). The depth roles sit on the field
+  // side after a round with the tall back upright on the outer
+  // side read as the posts facing the BACK of the field (Kaedon,
+  // 2026-11-27); in ESPN's photo the taller back upright stands
+  // on the field side and the stem / base sit behind the front
+  // upright at the far outside, which is this arrangement. The
+  // pad sits in the stage margin behind the end zone's back line,
+  // centred on the end zone's vertical centre (pad middle at the
+  // path's y=55.5, the ground anchor height, so the CSS anchoring
+  // is untouched), and the whole post, pad included, stays
+  // outside the turf. The bars are ONE flat stroke of #e8a90c
+  // with no shading at all: Kaedon kept the depth but rejected
+  // the cylindrical shading (shade edge, highlight ridge,
+  // deep-gold back upright) and the CSS drop-shadow, which read
+  // as shading on the bars, so the post is flat gold to its edges
+  // like ESPN's. The right post is the same body mirrored, so
+  // postBodyR is simply the same single path.
+  var postD = 'M19 18 V37 L15 39 M15 39 C15 42.8 13.4 45.5 13.4 51 M15 39 L11 41 V22';
+  var postPad = '<rect x="10.65" y="51" width="5.5" height="9" rx="1.6" fill="#5d6773"/>';
+  var postBody = '<path d="' + postD + '" fill="none" stroke="#e8a90c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    + postPad;
+  var postBodyR = postBody;
+  var posts = '<svg class="rz-fb-post rz-fb-post-l" viewBox="0 0 32 60" aria-hidden="true">' + postBody + '</svg>'
+    + '<svg class="rz-fb-post rz-fb-post-r" viewBox="0 0 32 60" aria-hidden="true"><g transform="translate(32 0) scale(-1 1)">' + postBodyR + '</g></svg>';
   var aria = 'Ball at ' + fp.label + ', ' + poss + ' ball' + (drive
     ? '. Drive: ' + drive.count + ' plays, ' + drive.net + ' yards, started ' + drive.startLabel : '');
   // Touchdown celebration: the flash + pill exist only on the arrival
@@ -35444,7 +35533,7 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
     var reduced = false;
     try { reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
     if (tdArrival) {
-      tdHtml += '<span class="rz-fb-tdflash" style="' + (fp.side === 'away' ? 'left:90%' : 'left:0')
+      tdHtml += '<span class="rz-fb-tdflash" style="' + (fp.side === 'away' ? 'left:91.667%' : 'left:0')
         + ';background:' + tcEff + '"></span>';
     }
     if (tdArrival || reduced) {
@@ -35453,13 +35542,14 @@ window._rzFieldBoardHtml = function(game, fp, drive, colors, fbAnim) {
   }
   return '<div class="rz-fb' + (fbAnim ? ' rz-fb-anim rz-fb-anim-' + fbAnim.type : '') + '"><div class="rz-fb-persp"><div class="rz-fb-stage">'
     + posts
-    + '<div class="rz-fb-field" data-depth="' + atkDepth + '" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + esc(aria) + '">'
-    + '<span class="rz-fb-ez" style="left:0;background:' + tint(colors[away] || '#334155') + '"><span>' + esc(away) + '</span></span>'
-    + '<span class="rz-fb-ez" style="right:0;background:' + tint(colors[home] || '#334155') + '"><span>' + esc(home) + '</span></span>'
-    + shade + rzDeep + trail + fd + flag
+    + '<div class="rz-fb-slab" aria-hidden="true"></div>'
+    + '<div class="rz-fb-field" style="--rz-fb-color:' + tcEff + '" role="img" aria-label="' + esc(aria) + '">'
+    + '<span class="rz-fb-ez rz-fb-ez-l" style="left:0;background:' + ezTint(away, colors[away] || '#334155') + '"><span>' + esc(away) + '</span></span>'
+    + '<span class="rz-fb-ez rz-fb-ez-r" style="right:0;background:' + ezTint(home, colors[home] || '#334155') + '"><span>' + esc(home) + '</span></span>'
+    + trail + fd + flag
     + '<span class="rz-fb-ball" style="left:' + ballX + '%' + (fbAnim ? ';--rz-fb-ball-from:' + xOf(fbAnim.fromAbs) + '%' : '') + '"></span>'
     + chip + tdHtml
-    + '</div></div></div>'
+    + '</div>' + (air ? '<div class="rz-fb-air" style="--rz-fb-color:' + tcEff + '">' + air + '</div>' : '') + '</div></div>'
     + driveRow
     + '<div class="rz-field-scale">' + labels + '</div></div>';
 };
@@ -35609,7 +35699,6 @@ window._rzRenderGameBoard = function(game, options) {
     var q4=/4|fourth/i.test(String(game.game_quarter||''));
     if(live&&q4&&marg<=8) dynCls+=' rz-board-nailbiter';
     if(status==='final'&&marg>=17) dynCls+=' rz-board-blowout';
-    if(live&&fp) dynCls+=' rz-board-heat-'+(fp.toGoal<=20?3:(fp.toGoal<=30?2:(fp.toGoal<=40?1:0)));
     dynStyle=' style="--rz-acc-a:'+(colors[away]||'#334155')+';--rz-acc-h:'+(colors[home]||'#334155')+'"';
   }
   return '<div class="rz-nfl-board is-'+esc(status)+(live?' is-live':'')+(pre?' rz-nfl-board--pregame':'')+(options.modal?' rz-nfl-board--modal':'')+dynCls+'"'+(options.id?' id="'+esc(options.id)+'"':'')+dynStyle+'>'+header+field+'</div>';
