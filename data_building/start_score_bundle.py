@@ -81,6 +81,20 @@ VARIANT_SCORING: Dict[str, Dict[str, float]] = {
 # Fantasy positions the Start/Sit advisor ranks.
 _BUNDLE_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DEF")
 
+#: Injury-exit cleansing (Kaedon, 2026-11-27): a played week whose
+#: snap share falls under this line, where the player then missed his
+#: team's next game, is a week he left hurt. It drops out of the
+#: played-week sample the rating's windows are derived from (see
+#: derive_start_sit_inputs).
+INJURY_EXIT_SNAP_SHARE = 0.25
+
+#: Contested-room gate (Kaedon, 2026-11-27): once the room lead has
+#: missed at least this many consecutive team games while the
+#: non-lead played them, the replacement held a real role for a
+#: stretch -- the room is contested and the lead filter is not
+#: derived for the pair (see derive_start_sit_inputs).
+CONTESTED_ROOM_MIN_LEAD_ABSENCE = 3
+
 _TABLE_READY = False
 
 
@@ -364,6 +378,20 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
     first-game-back discount's input (bye weeks never count, and no
     value is derived when a bye cannot be ruled out for the gap).
 
+    Two gates clean the played-week sample before windows are taken
+    from it (Kaedon, 2026-11-27). An INJURY EXIT -- a played week
+    with a snap share under 25% where the player then missed his
+    team's next game -- is a week he left hurt: it is not evidence
+    of his form or his role, so it enters no form window, no snap
+    trend and not the projection cap's last-4 window. The absence
+    count is the one reader that keeps the raw weeks (the exit week
+    is a game played, not a game missed). And the lead filter is
+    derived only for an uncontested room: when the room lead missed
+    3+ consecutive team games while the non-lead played them, the
+    replacement's form over that stretch is his own, not borrowed
+    from the lead's absence, so no ``lead_pid`` / ``*_lead`` values
+    are derived for the pair and both players score on raw inputs.
+
     This is the single derivation the bundle build and the Start/Sit page's
     live fallback share, so both paths feed ``compute_start_score`` identical
     inputs. Cached per (season, scoring signature, newest stat-file mtime).
@@ -415,6 +443,14 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
         # where a team shows no played row is a week that team did
         # not play -- its bye, or indistinguishable from one).
         team_played: Dict[int, set] = {}
+        # (week, team) pairs where the team's offense demonstrably
+        # took the field -- a QB/RB/WR/TE recorded offensive snaps.
+        # The two 2026-11-27 gates below read team calendars built
+        # from this, not from team_played: a bye week still carries
+        # stray bookkeeping rows (defenders marked gp=1 with no
+        # snaps, an occasional line row) that put the team in
+        # team_played without the team having played a game.
+        team_game_seen: set = set()
         played_usage: Dict[str, list] = {}
         played_shares: Dict[str, list] = {}
         played_share_weeks: Dict[str, list] = {}
@@ -469,6 +505,13 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                 except Exception:
                     continue
                 pos = positions.get(pid) or str(st.get("position") or st.get("pos") or "")
+                if _team and pos.upper() in ("QB", "RB", "WR", "TE"):
+                    try:
+                        _off = float(st.get("off_snp") or 0)
+                    except (TypeError, ValueError):
+                        _off = 0.0
+                    if _off > 0:
+                        team_game_seen.add((wnum, _team))
                 played_points.setdefault(pid, []).append(pts)
                 played_weeks.setdefault(pid, []).append(wnum)
                 played_usage.setdefault(pid, []).append(
@@ -479,10 +522,64 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                     _rec = 0.0
                 played_recs.setdefault(pid, []).append(_rec)
                 played_pos[pid] = pos
-        out = {
-            pid: form_usage_inputs(pts, played_usage.get(pid))
-            for pid, pts in played_points.items()
-        }
+        # Team game calendars: the weeks each team's offense
+        # actually took the field (see ``team_game_seen``). The two
+        # gates below read them -- a week his team did not play (its
+        # bye) is on nobody's calendar, so it neither breaks nor
+        # extends a run of missed team games, and the game after an
+        # injury exit is the next game the team really played.
+        team_weeks: Dict[str, list] = {}
+        for _w, _t in team_game_seen:
+            team_weeks.setdefault(_t, []).append(_w)
+        for _cal in team_weeks.values():
+            _cal.sort()
+        # Injury-exit weeks (Kaedon, 2026-11-27): a played week with
+        # a snap share under INJURY_EXIT_SNAP_SHARE where the player
+        # then missed his team's next game is a week he left hurt
+        # (David Montgomery's Week 5: 13.6% of the snaps, then out
+        # four games -- yet the week sat in his form and snap-trend
+        # windows and scored him as a cold, shrinking player the week
+        # after a 15.4-point return). The week drops out of every
+        # window derived from the played lists below: the form
+        # inputs, the projection cap's last-4 window and the snap
+        # trend. The absence count further down is the exception --
+        # it reads the RAW played weeks, because the exit week is a
+        # game he played, not one he missed. A week whose share
+        # cannot be computed, or with no later team game in the data
+        # to check the absence against, is never an exit: no
+        # evidence, no exclusion.
+        exit_weeks: Dict[str, set] = {}
+        for _pid, _weeks in played_weeks.items():
+            _share_by_week = dict(zip(
+                played_share_weeks.get(_pid) or [],
+                played_shares.get(_pid) or []))
+            _cal = team_weeks.get(teams.get(_pid) or "") or []
+            _played_set = set(_weeks)
+            _exits = set()
+            for _w in _weeks:
+                _share = _share_by_week.get(_w)
+                if _share is None or _share >= INJURY_EXIT_SNAP_SHARE:
+                    continue
+                _next = next((tw for tw in _cal if tw > _w), None)
+                if _next is not None and _next not in _played_set:
+                    _exits.add(_w)
+            if _exits:
+                exit_weeks[_pid] = _exits
+
+        def _kept(_pid):
+            _exits = exit_weeks.get(_pid)
+            _weeks = played_weeks.get(_pid) or []
+            if not _exits:
+                return list(range(len(_weeks)))
+            return [i for i, w in enumerate(_weeks) if w not in _exits]
+
+        out = {}
+        for pid, pts in played_points.items():
+            _keep = _kept(pid)
+            _usage = played_usage.get(pid) or []
+            out[pid] = form_usage_inputs(
+                [pts[i] for i in _keep],
+                [_usage[i] if i < len(_usage) else None for i in _keep])
         # Projection-cap evidence (Kaedon, 2026-11-20): each player's
         # expected PPG over his last 4 played weeks from the site's
         # expected-points model, read from the weekly advanced-metrics
@@ -508,7 +605,12 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                     _weeks = played_weeks.get(_pid) or []
                     if not _weeks:
                         continue
-                    _win = _weeks[-4:]
+                    # The cap reads the same cleansed last-4 played
+                    # list as the form windows (injury exits out).
+                    _keep = _kept(_pid)
+                    _win = [_weeks[i] for i in _keep][-4:]
+                    if not _win:
+                        continue
                     _rows = _exp_map.get(_pid) or {}
                     if not any(w in _rows for w in _win):
                         continue
@@ -516,7 +618,9 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                             / len(_win))
                     if (_tep_bonus
                             and (played_pos.get(_pid) or "").upper() == "TE"):
-                        _recs = (played_recs.get(_pid) or [])[-len(_win):]
+                        _all_recs = played_recs.get(_pid) or []
+                        _recs = [_all_recs[i] for i in _keep
+                                 if i < len(_all_recs)][-len(_win):]
                         if _recs:
                             _exp += _tep_bonus * (sum(_recs) / len(_recs))
                     _entry["exp_last4_ppg"] = _exp
@@ -557,6 +661,10 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                          exc_info=True)
         # Room leads + lead-filtered form (Kaedon, 2026-11-19): a
         # handcuff's last-4 must not be built on the starter's absence.
+        # (2026-11-27: the contested-room gate inside the loop below
+        # withholds the filter entirely when the lead's absence ran
+        # 3+ team games with the non-lead playing -- a long-term
+        # replacement's form is his own.)
         # For RB/WR/TE, group each team's room from the players index
         # and name the lead as the teammate with the highest season
         # usage per played game (opportunities for RB, targets for
@@ -579,7 +687,7 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                 _team = teams.get(_pid) or ""
                 if _pos in ("RB", "WR", "TE") and _team:
                     rooms.setdefault((_team, _pos), []).append(_pid)
-            for _room_pids in rooms.values():
+            for (_room_team, _room_pos), _room_pids in rooms.items():
                 if len(_room_pids) < 2:
                     continue
                 _usage_pg: Dict[str, tuple] = {}
@@ -601,6 +709,36 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
                         continue
                     if _usage_pg[_lead][0] <= _usage_pg[_pid][0]:
                         continue  # co-lead on usage: no filter
+                    # Contested-room gate (Kaedon, 2026-11-27): the
+                    # filter prices the non-lead's opportunity as
+                    # borrowed from the lead, which stops being true
+                    # once the lead missed a real stretch while the
+                    # non-lead held the job. Woody Marks ran Houston's
+                    # backfield for four games while David Montgomery
+                    # was out, yet the filter priced him off only the
+                    # five early games they shared -- and named
+                    # Montgomery the lead on season usage built from
+                    # Week 1 and his return game. When the lead missed
+                    # CONTESTED_ROOM_MIN_LEAD_ABSENCE or more
+                    # consecutive team games that the non-lead played,
+                    # the room is contested: no filter is derived for
+                    # the pair and both score on their raw inputs. A
+                    # one- or two-game fill-in (Emmett Johnson for
+                    # Kenneth Walker III, two games) stays filtered.
+                    _cal = team_weeks.get(_room_team) or []
+                    _pid_weeks = set(played_weeks.get(_pid) or [])
+                    _run = 0
+                    _contested = False
+                    for _tw in _cal:
+                        if _tw in _pid_weeks and _tw not in _lead_weeks:
+                            _run += 1
+                            if _run >= CONTESTED_ROOM_MIN_LEAD_ABSENCE:
+                                _contested = True
+                                break
+                        else:
+                            _run = 0
+                    if _contested:
+                        continue
                     _entry = out.get(_pid)
                     if _entry is None:
                         continue
@@ -642,7 +780,17 @@ def derive_start_sit_inputs(season: int, scoring_settings: dict) -> Dict[str, di
             logger.debug("start_score_bundle lead-form derivation failed",
                          exc_info=True)
         for _pid, _entry in out.items():
-            _entry["snap_trend"] = snap_share_trend(played_shares.get(_pid))
+            _exits = exit_weeks.get(_pid)
+            if not _exits:
+                _entry["snap_trend"] = snap_share_trend(
+                    played_shares.get(_pid))
+            else:
+                # The trend window is cleansed like the form windows:
+                # an injury-exit week is not role evidence.
+                _entry["snap_trend"] = snap_share_trend(
+                    [s for s, w in zip(played_shares.get(_pid) or [],
+                                       played_share_weeks.get(_pid) or [])
+                     if w not in _exits])
     except Exception:
         logger.debug("start_score_bundle input derivation failed", exc_info=True)
         out = {}
