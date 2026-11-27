@@ -105,6 +105,11 @@ def test_auto_revalidate_never_shows_the_modal():
     auto = src[src.index("async function autoRevalidate()"):src.index("window.brMaybeAutoRevalidate")]
     assert "showRefreshOverlay" not in auto
     assert "brRefreshModal" not in auto
+    # The one exception is a USER PRESS during the silent run: the press
+    # opens the modal (doRefresh _busy branch) and this pass only
+    # settles it, gated on that press's _tapFeedback flag.
+    assert "settleTapRefreshModal(tapOutcome)" in auto
+    assert "doRefresh._tapFeedback" in auto
 
 
 # ── Targeted refresh ─────────────────────────────────────────────────────────
@@ -536,5 +541,306 @@ function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve,
         fp = os.path.join(td, "refresh_modal_chrome.js")
         with open(fp, "w", encoding="utf-8") as fh:
             fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+# ── Refresh Data button audit (third pass) ──────────────────────────────────
+# Every control that is or functions as Refresh Data was traced: the
+# More-sheet row, the desktop freshness chip, the settings-menu action,
+# the legacy #refreshBtn, the Portfolio page handler and its per-card
+# Retry buttons, and ScoreZone's timer refresh button. Each press must
+# show the loading modal as its first visible effect, including a press
+# that lands while a silent auto-revalidate is already running.
+
+def test_busy_press_during_silent_run_shows_the_modal():
+    body = _do_refresh()
+    busy = body[body.index("if (doRefresh._busy)"):body.index("if (doRefresh._controller)")]
+    # The busy branch must open the modal for the in-flight silent run,
+    # not just tweak the label.
+    assert "showRefreshOverlay(true, { skipEscape: true })" in busy
+    assert "doRefresh._tapFeedback = true" in busy
+    src = _freshness_iife()
+    helper = src[src.index("function settleTapRefreshModal"):src.index("function ackBypassCache")]
+    assert "showRefreshSuccess(false)" in helper
+    assert "showRefreshFailure(false" in helper
+
+
+def test_portfolio_per_card_retry_shows_and_settles_the_modal():
+    start = APP_JS.index("[data-summary-retry],[data-matchup-retry]")
+    handler = APP_JS[start:start + 2200]
+    assert "window.brRefreshModal.show()" in handler
+    assert "window.brRefreshModal.succeed()" in handler
+    assert "window.brRefreshModal.fail(runCardRefresh)" in handler
+    # The settle comes from schedule()'s terminal tracker argument.
+    assert "schedule(owner, card, 0, true, settleCardModal)" in handler
+
+
+def test_scorezone_timer_button_shows_and_settles_the_modal():
+    sz = _read("static/scorezone.js")
+    start = sz.index("e.target.id === 'rz-timer'")
+    handler = sz[start:start + 2600]
+    assert "window.brRefreshModal.show()" in handler
+    assert "_manualRefresh()" in handler
+    assert "window.brRefreshModal.succeed()" in handler
+    assert "window.brRefreshModal.fail(runManual)" in handler
+    # The background resume path still calls _manualRefresh directly
+    # (no modal): only the click handler wraps it.
+    assert "_resumeIfStale" in sz
+
+
+def test_legacy_refresh_btn_never_fails_silently():
+    start = APP_JS.index('bindOnce(refreshBtn, "refreshBtnClick"')
+    handler = APP_JS[start:start + 900]
+    assert "window.brRefreshModal.fail()" in handler
+    assert "window.brRefreshLeague()" in handler
+
+
+def _busy_press_harness(fail: bool) -> str:
+    src = _freshness_iife()
+    settle = (
+        "rejectExpire(new Error('expire failed'));"
+        if fail else
+        "resolveExpire({ ok: true, status: 200 });"
+    )
+    after = (
+        # Failure: the failure card stays up after the silent run ends.
+        """
+  await autoP;
+  if (!overlay || overlay.style.display !== 'flex') process.exit(6);
+  process.exit(0);
+"""
+        if fail else
+        # Success: brief success card, then auto-dismiss.
+        """
+  await autoP;
+  if (!overlay || overlay.style.display !== 'flex') process.exit(6);
+  await wait(1100);
+  if (overlay.style.display !== 'none') process.exit(7);
+  process.exit(0);
+"""
+    )
+    return r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+var postCount = 0;
+var resolveExpire = null, rejectExpire = null;
+var root = { dataset: { cacheTs: '1000' }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var DOMParser = function(){};
+DOMParser.prototype.parseFromString = function(){
+  return { getElementById: function(){ return { dataset: { cacheTs: '2000' } }; } };
+};
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var realSetTimeout = globalThis.setTimeout;
+window.brFetchWithTimeout = function(url, opts){
+  if (url === '/api/refresh-league') {
+    postCount++;
+    return new Promise(function(res, rej){ resolveExpire = res; rejectExpire = rej; });
+  }
+  return Promise.resolve({ ok: true, status: 200, text: function(){ return Promise.resolve('<html>fresh</html>'); } });
+};
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+(async function(){
+  // Start the SILENT auto-revalidate (stale snapshot): it must not
+  // show the modal on its own.
+  var autoP = window.brMaybeAutoRevalidate();
+  if (!window.brRefreshLeague._busy) process.exit(2);
+  if (elements['brRefreshOverlay']) process.exit(3);
+  // Simulate the Refresh Data press: every Refresh Data control (More
+  // sheet row, freshness chip, settings action, #refreshBtn) invokes
+  // exactly this function. The modal must be visible SYNCHRONOUSLY,
+  // before the in-flight run settles, and no second run may start.
+  window.brRefreshLeague();
+  var overlay = elements['brRefreshOverlay'];
+  if (!overlay || overlay.style.display !== 'flex') process.exit(4);
+  if (postCount !== 1) process.exit(5);
+  """ + settle + after + r"""
+})().catch(function(e){ console.error(e); process.exit(8); });
+"""
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_busy_press_shows_modal_and_success_settles_it_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "refresh_busy_press.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(_busy_press_harness(fail=False))
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_busy_press_shows_modal_and_failure_keeps_it_up_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "refresh_busy_press_fail.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(_busy_press_harness(fail=True))
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
+
+
+# ── Scroll lock while the modal is up ───────────────────────────────────────
+# The page behind the refresh modal must not scroll in any modal state.
+# The modal does not grow its own lock: its overlay (#brRefreshOverlay,
+# display flex/none) joins the central br-scroll-lock overlay family
+# (PR #3285), whose MutationObserver watches style flips and whose
+# refcount composes with every other overlay's lock.
+
+def test_refresh_modal_overlay_is_in_the_central_scroll_lock_family():
+    lock = APP_JS[APP_JS.index("/* br-scroll-lock:start */"):APP_JS.index("/* br-scroll-lock:end */")]
+    assert "'#brRefreshOverlay'" in lock
+    # The modal shows/hides purely by inline display, which is one of
+    # the attribute flips the central observer watches.
+    assert "attributeFilter: ['class', 'style', 'hidden']" in lock
+    assert "MutationObserver" in lock
+    # The CSS half: the overlay shell stops scroll chaining at its edge.
+    assert ".br-refresh-modal-overlay" in CSS
+
+
+def _scroll_lock_harness() -> str:
+    lock_src = APP_JS[APP_JS.index("/* br-scroll-lock:start */"):APP_JS.index("/* br-scroll-lock:end */")]
+    src = _freshness_iife()
+    return r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+window.addEventListener = function(){};
+window.scrollY = 120;
+window.pageYOffset = 120;
+var scrollToCalls = [];
+window.scrollTo = function(x, y){ scrollToCalls.push([x, y]); };
+window.requestAnimationFrame = function(fn){ fn(); return 1; };
+var moCallback = null;
+var MutationObserver = function(cb){ moCallback = cb; };
+MutationObserver.prototype.observe = function(){};
+MutationObserver.prototype.disconnect = function(){};
+window.MutationObserver = MutationObserver;
+var htmlClasses = {};
+var documentElement = {
+  scrollTop: 0,
+  classList: {
+    add: function(c){ htmlClasses[c] = true; },
+    remove: function(c){ delete htmlClasses[c]; },
+    contains: function(c){ return !!htmlClasses[c]; }
+  }
+};
+function makeEl(){
+  return {
+    style: {}, id: '', className: '', innerHTML: '', textContent: '',
+    setAttribute: function(){}, removeAttribute: function(){},
+    addEventListener: function(){},
+    appendChild: function(){},
+    querySelector: function(){ return { style: {}, textContent: '', addEventListener: function(){} }; },
+    querySelectorAll: function(){ return []; },
+    getClientRects: function(){ return this.style.display === 'none' ? [] : [{ width: 100, height: 100 }]; }
+  };
+}
+var root = { dataset: { cacheTs: '1000' }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button };
+var body = makeEl();
+body.scrollTop = 0; body.scrollHeight = 2000; body.clientHeight = 800;
+body.appendChild = function(el){ elements[el.id] = el; };
+var document = {
+  visibilityState: 'visible',
+  documentElement: documentElement,
+  body: body,
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  querySelectorAll: function(){
+    var ov = elements['brRefreshOverlay'];
+    return ov ? [ov] : [];
+  },
+  addEventListener: function(){},
+  createElement: function(){ return makeEl(); }
+};
+window.getComputedStyle = function(el){
+  if (el === body) return { overflowY: '', overflowX: '' };
+  return { display: (el.style && el.style.display) || '', visibility: 'visible', overflowY: '', overflowX: '' };
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var realSetTimeout = globalThis.setTimeout;
+function fireMutation(){ if (moCallback) moCallback(); }
+""" + lock_src + "\n" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+(async function(){
+  var lock = window.brScrollLock;
+  if (!lock) process.exit(2);
+  if (lock.isLocked()) process.exit(3);
+  // Show the modal (refreshing state): the lock must engage, pin the
+  // body at the current offset and mark <html> locked.
+  window.brRefreshModal.show();
+  var overlay = elements['brRefreshOverlay'];
+  if (!overlay || overlay.style.display !== 'flex') process.exit(4);
+  fireMutation();
+  if (!lock.isLocked()) process.exit(5);
+  if (body.style.position !== 'fixed' || body.style.top !== '-120px') process.exit(6);
+  if (!documentElement.classList.contains('br-scroll-locked')) process.exit(7);
+  // Refcount composition: another overlay's manual lock must survive
+  // the modal dismissing underneath it.
+  lock.acquire();
+  window.brRefreshModal.hide();
+  fireMutation();
+  if (!lock.isLocked()) process.exit(8);
+  if (body.style.position !== 'fixed') process.exit(9);
+  // Releasing that lock restores scroll exactly, exactly once.
+  lock.release();
+  if (lock.isLocked()) process.exit(10);
+  if (body.style.position !== '' || body.style.top !== '') process.exit(11);
+  if (!scrollToCalls.some(function(c){ return c[0] === 0 && c[1] === 120; })) process.exit(12);
+  // Failure state: the modal stays up, so the lock stays on; Dismiss
+  // (hide) releases it.
+  window.brRefreshModal.fail();
+  if (overlay.style.display !== 'flex') process.exit(13);
+  fireMutation();
+  if (!lock.isLocked()) process.exit(14);
+  window.brRefreshModal.hide();
+  fireMutation();
+  if (lock.isLocked()) process.exit(15);
+  // Success state: locked through the brief success card, released on
+  // its auto-dismiss.
+  window.brRefreshModal.show();
+  window.brRefreshModal.succeed();
+  fireMutation();
+  if (!lock.isLocked()) process.exit(16);
+  await wait(1100);
+  if (overlay.style.display !== 'none') process.exit(17);
+  fireMutation();
+  if (lock.isLocked()) process.exit(18);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(19); });
+"""
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_refresh_modal_locks_page_scroll_until_dismissed_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "refresh_modal_scroll_lock.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(_scroll_lock_harness())
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
     assert res.returncode == 0, res.stderr or res.stdout

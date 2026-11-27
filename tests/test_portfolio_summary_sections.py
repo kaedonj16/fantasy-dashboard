@@ -31,7 +31,12 @@ def test_progressive_hydration_keeps_streak_slot_and_resets_manual_retry():
     # the streak target before the section patch runs.
     render = source[source.index("function renderSummary(card, data)"):source.index("function updateAggregateRecord()")]
     assert "data.streak" in render
-    assert "schedule(owner, button.closest('.pf-lg-card'), 0, true)" in source
+    # Manual per-card Retry still schedules the clicked card with delay 0 and
+    # reset=true. PR #3288 deliberately restructured the handler to derive the
+    # card first and pass the refresh-modal settle tracker as schedule()'s
+    # fifth argument, so the old inline literal no longer exists verbatim.
+    assert "var card = button.closest && button.closest('.pf-lg-card');" in source
+    assert "schedule(owner, card, 0, true, settleCardModal)" in source
 
 
 def test_render_summary_reapplies_server_side_styling_after_async_refresh():

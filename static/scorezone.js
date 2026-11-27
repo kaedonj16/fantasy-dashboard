@@ -6753,7 +6753,33 @@
     if (e.target && e.target.id === 'rz-timer') {
       var el = document.getElementById('rz-timer');
       if (el) { el.textContent = '↻'; el.classList.add('rz-timer-refreshing'); }
-      _manualRefresh();
+      // A timer tap is a user-initiated refresh press: it must show the
+      // shared loading modal like the Refresh Data button, and settle
+      // it from the manual refresh's outcome. (The resume/online path
+      // below calls _manualRefresh directly and stays silent, as a
+      // background refresh should.) The user-scope stream can stay
+      // open indefinitely, so a hung wait is capped: the modal just
+      // closes, mirroring pull-to-refresh's hung-hook behavior.
+      var runManual = function () {
+        var p = _manualRefresh();
+        if (!window.brRefreshModal) return;
+        window.brRefreshModal.show();
+        var settled = false;
+        var finish = function (failed) {
+          if (settled) return; settled = true;
+          if (failed || _lastPollFailed) window.brRefreshModal.fail(runManual);
+          else window.brRefreshModal.succeed();
+        };
+        var cap = setTimeout(function () {
+          if (settled) return; settled = true;
+          window.brRefreshModal.hide();
+        }, 15000);
+        if (p && typeof p.then === 'function') {
+          p.then(function () { clearTimeout(cap); finish(false); },
+                 function () { clearTimeout(cap); finish(true); });
+        } else { clearTimeout(cap); finish(false); }
+      };
+      runManual();
     }
   });
 
