@@ -26,6 +26,14 @@ what the player scores in shared games, and recent PPG, season PPG,
 the usage delta and the snap trend swap to their shared-games
 derivations while the lead is active
 (utils.start_sit.lead_adjusted_score_inputs).
+
+Gates (Kaedon, 2026-11-27): the derivation withholds the lead
+filter when the room is CONTESTED -- the lead missed 3+ consecutive
+team games while the non-lead played them, so the replacement's
+form is his own (Marks over Montgomery, Week 12) -- and cleanses
+INJURY EXITS from the played-week sample: a sub-25% snap-share week
+followed by a missed team game is a week the player left hurt, not
+form or role evidence (Montgomery's Week 5).
 """
 import json
 
@@ -488,6 +496,173 @@ def test_derive_shared_games_inputs(tmp_path, monkeypatch):
     # Snap trend likewise: raw counts the spike week's 90% share.
     assert entry["snap_trend"] == pytest.approx(0.35)
     assert entry["snap_trend_lead"] == pytest.approx(0.10)
+
+
+# ---------------------------------------------------------------------------
+# Gates: contested room + injury-exit cleansing (Kaedon, 2026-11-27)
+# ---------------------------------------------------------------------------
+
+def test_derive_contested_room_derives_no_lead_filter(tmp_path, monkeypatch):
+    from data_building import start_score_bundle as ssb
+    from utils.fantasy_scoring import week_stat_points
+
+    season = 2026
+    scoring = dict(ssb.VARIANT_SCORING["ppr"])
+    lead, cuff = "900", "901"          # HOU RB room (Marks / Montgomery)
+    rows = {}
+    # The lead plays weeks 1-5, misses 6-9 (four team games), returns
+    # week 10. The replacement plays every week: a small shared-games
+    # role early, the full job during the absence.
+    for w in range(1, 11):
+        if w <= 5 or w == 10:
+            rows.setdefault(w, {})[lead] = _rb_line(200, 20, 5)
+        if 6 <= w <= 9:
+            rows.setdefault(w, {})[cuff] = _rb_line(250, 20, 5)
+        else:
+            rows.setdefault(w, {})[cuff] = _rb_line(40, 3, 2)
+    for w, payload in rows.items():
+        _write_stat_file(tmp_path, season, w, payload)
+    monkeypatch.setattr(ssb, "_stat_files",
+                        lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
+                                   for w in range(1, 11)])
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: {
+        lead: {"pos": "RB", "team": "HOU"},
+        cuff: {"pos": "RB", "team": "HOU"},
+    })
+    ssb._DERIVE_CACHE.clear()
+    out = ssb.derive_start_sit_inputs(season, scoring)
+    ssb._DERIVE_CACHE.clear()
+
+    scored = {w: week_stat_points(rows[w][cuff], scoring, "")
+              for w in range(1, 11)}
+    entry = out[cuff]
+    # The lead still wins the usage title (25.0 vs 13.0 per game), so
+    # only the contested-room gate can explain a missing filter: he
+    # missed four straight team games the replacement played, so no
+    # lead-filtered inputs are derived and the raw form stands --
+    # including the absence stretch he earned the job in.
+    assert "lead_pid" not in entry
+    assert "last4_ppg_lead" not in entry
+    assert entry["last4_ppg"] == pytest.approx(
+        sum(scored[w] for w in (7, 8, 9, 10)) / 4)
+    assert "lead_pid" not in out[lead]
+
+
+def test_derive_two_game_fill_in_stays_filtered(tmp_path, monkeypatch):
+    from data_building import start_score_bundle as ssb
+    from utils.fantasy_scoring import week_stat_points
+
+    season = 2026
+    scoring = dict(ssb.VARIANT_SCORING["ppr"])
+    lead, cuff = "900", "901"          # KC RB room (Walker / Emmett)
+    rows = {}
+    # The lead sits exactly two games (weeks 6-7) and returns week 8;
+    # the fill-in's spike lives entirely in those two weeks.
+    for w in range(1, 9):
+        if w <= 5 or w == 8:
+            rows.setdefault(w, {})[lead] = _rb_line(200, 20, 5)
+        if 6 <= w <= 7:
+            rows.setdefault(w, {})[cuff] = _rb_line(350, 20, 5)
+        else:
+            rows.setdefault(w, {})[cuff] = _rb_line(40, 3, 2)
+    for w, payload in rows.items():
+        _write_stat_file(tmp_path, season, w, payload)
+    monkeypatch.setattr(ssb, "_stat_files",
+                        lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
+                                   for w in range(1, 9)])
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: {
+        lead: {"pos": "RB", "team": "KC"},
+        cuff: {"pos": "RB", "team": "KC"},
+    })
+    ssb._DERIVE_CACHE.clear()
+    out = ssb.derive_start_sit_inputs(season, scoring)
+    ssb._DERIVE_CACHE.clear()
+
+    scored = {w: week_stat_points(rows[w][cuff], scoring, "")
+              for w in range(1, 9)}
+    entry = out[cuff]
+    # Two missed games is a fill-in, not a takeover: the filter is
+    # derived as before, and the filtered form excludes the spike.
+    assert entry["lead_pid"] == lead
+    assert entry["last4_ppg"] == pytest.approx(
+        sum(scored[w] for w in (5, 6, 7, 8)) / 4)
+    assert entry["last4_ppg_lead"] == pytest.approx(
+        sum(scored[w] for w in (3, 4, 5, 8)) / 4)
+    assert entry["last4_ppg_lead"] < entry["last4_ppg"]
+
+
+def _rb_line_snaps(yd, att, tgt, off_snp, tm_snp=60):
+    line = _rb_line(yd, att, tgt)
+    line["off_snp"] = off_snp
+    line["tm_off_snp"] = tm_snp
+    return line
+
+
+def test_derive_injury_exit_week_leaves_form_and_trend(tmp_path,
+                                                       monkeypatch):
+    from data_building import start_score_bundle as ssb
+    from utils.fantasy_scoring import week_stat_points
+
+    season = 2026
+    scoring = dict(ssb.VARIANT_SCORING["ppr"])
+    hurt, ctrl = "950", "951"          # solo RBs, HOU and MIA
+    qb_h, qb_m = "960", "961"          # team-calendar filler
+    yd = {1: 100, 2: 200, 3: 300, 4: 20, 5: 150, 6: 400}
+    rows = {}
+    for w in range(1, 7):
+        rows[w] = {
+            qb_h: {"position": "QB", "pts_ppr": 20.0, "pass_yd": 250,
+                   "pass_td": 2, "gp": 1, "off_snp": 60},
+            qb_m: {"position": "QB", "pts_ppr": 20.0, "pass_yd": 250,
+                   "pass_td": 2, "gp": 1, "off_snp": 60},
+            # Control: a 10% snap week 4, but he plays week 5 -- a
+            # quiet week, not an exit, and it stays in every window.
+            ctrl: _rb_line_snaps(yd[w], 10, 2, 6 if w == 4 else 48),
+        }
+        if w != 5:
+            # Hurt: week 4 is a 10%-snap week and he misses week 5
+            # entirely -- the injury-exit signature.
+            rows[w][hurt] = _rb_line_snaps(
+                yd[w], 10, 2, 6 if w == 4 else 48)
+    for w, payload in rows.items():
+        _write_stat_file(tmp_path, season, w, payload)
+    monkeypatch.setattr(ssb, "_stat_files",
+                        lambda s: [str(tmp_path / f"sleeper_stats_s{s}_w{w}.json")
+                                   for w in range(1, 7)])
+    monkeypatch.setattr("utils.utils.load_players_index", lambda: {
+        hurt: {"pos": "RB", "team": "HOU"},
+        ctrl: {"pos": "RB", "team": "MIA"},
+        qb_h: {"pos": "QB", "team": "HOU"},
+        qb_m: {"pos": "QB", "team": "MIA"},
+    })
+    ssb._DERIVE_CACHE.clear()
+    out = ssb.derive_start_sit_inputs(season, scoring)
+    ssb._DERIVE_CACHE.clear()
+
+    scored = {w: week_stat_points(rows[w][hurt], scoring, "")
+              for w in (1, 2, 3, 4, 6)}
+    entry = out[hurt]
+    # The exit week is out of the sample: form runs on weeks 1, 2, 3
+    # and 6 only (raw last-4 would have counted week 4's 2 points
+    # instead of week 1's 10).
+    assert entry["played_games"] == 4
+    assert entry["last4_ppg"] == pytest.approx(
+        sum(scored[w] for w in (1, 2, 3, 6)) / 4)
+    assert entry["recent_ppg"] == pytest.approx(
+        sum(scored[w] for w in (2, 3, 6)) / 3)
+    # Snap trend likewise: the four remaining shares are all .80, so
+    # the trend is flat where the raw window read -0.35.
+    assert entry["snap_trend"] == pytest.approx(0.0)
+
+    scored_c = {w: week_stat_points(rows[w][ctrl], scoring, "")
+                for w in range(1, 7)}
+    centry = out[ctrl]
+    # The control's identical low-share week stays in: he played the
+    # next game, so nothing is cleansed.
+    assert centry["played_games"] == 6
+    assert centry["last4_ppg"] == pytest.approx(
+        sum(scored_c[w] for w in (3, 4, 5, 6)) / 4)
+    assert centry["snap_trend"] == pytest.approx(0.35)
 
 
 def _kc_bundles_ext(**cuff_over):
