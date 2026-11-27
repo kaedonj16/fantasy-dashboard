@@ -22848,6 +22848,272 @@ if (typeof window !== 'undefined') {
 }
 // [br-name-match:end]
 
+/* br-scroll-lock:start */
+// Central background scroll lock (Kaedon, 2026-11-26): while ANY modal,
+// popover, dropdown or sheet is open, scrolling (wheel, touch, trackpad)
+// moves only that overlay, never the page behind it.
+//
+// One observer watches the whole overlay family instead of every open /
+// close site opting in: overlays appear and disappear through dozens of
+// paths (X button, backdrop tap, Esc, programmatic closes, DOM removal),
+// and the DOM state is the one signal they all share. When any overlay
+// from OVERLAY_SELECTOR is visible the lock engages; when the last one
+// goes away it releases. Stacked / nested overlays are handled by the
+// same check (the lock holds until NONE are visible), and the manual
+// acquire()/release() refcount covers callers with no DOM overlay.
+//
+// The lock itself is the iOS-proven technique: body overflow:hidden alone
+// does not stop touch scrolling in iOS Safari, so when the window is the
+// scroller the body is also pinned with position:fixed at the current
+// scroll offset and the offset is restored exactly on release. In the
+// renders where <body> itself is the scroll container (the base CSS
+// pins html,body to height:100%, which computes body's overflow-y to
+// auto), pinning would collapse its scroll box, so there the lock is
+// the br-scroll-locked class freezing overflow on html and body
+// instead: a hidden-overflow body keeps its scrollTop untouched and
+// simply refuses user scroll. A non-passive touchmove guard is the
+// second layer: while locked, a touch drag is only allowed to proceed
+// when it lands on a scrollable element inside the overlay that can
+// still move in that direction, so a drag on the backdrop, or one that
+// runs past the end of the overlay's own scroller, never chains into
+// the background. Intentional inner scrollers (tab bars, wide tables,
+// carousels) keep working: the guard walks up from the touch target and
+// honours whichever axis the gesture is actually moving on.
+(function () {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (window.__brScrollLockInstalled) return;
+  window.__brScrollLockInstalled = true;
+
+  var OVERLAY_SELECTOR = [
+    '.player-modal-overlay',   // player modal + breakout modal (shared shell)
+    '.team-modal-overlay',     // team modal / drawer
+    '.for-modal-overlay',      // Front Office report modal
+    '.rzm-modal-overlay',      // ScoreZone / redzone modal
+    '.modal-overlay',          // generic page modals (trade login, pages)
+    '.modal.open',
+    '.signin-modal-overlay',   // sign-in / claim modal (display toggled)
+    '.scm-overlay',            // share-card modals (created on open)
+    '.sub-welcome-overlay',    // subscription welcome dialog
+    '#tiTradesOverlay',        // Trade Intel trades modal
+    '#rkModal',                // rookie / prospect modal
+    '#brMoreSheet.open',       // mobile More bottom sheet (.br-sheet)
+    '#brSearchScreen.open',    // full-screen mobile search
+    '.rz-bs-sheet',            // ScoreZone box-score sheet (scorezone.js)
+    '.nt-sheet',               // NFL Teams box-score sheet
+    '.sheet.open',
+    '.br-asst-popup',          // assistant panel (hidden attr when closed)
+    '.changelog-dropdown',     // scrollable popover (display toggled)
+    '.settings-dropdown',      // popover (display toggled)
+    '[data-br-modal-open="true"]'
+  ].join(', ');
+
+  var manualCount = 0;
+  var locked = false;
+  var saved = null; // { y, position, top, left, right, width, overflow }
+
+  // The site's scroll can live on the window, <html> or <body> depending
+  // on the render (same triple the pull-to-refresh module reads).
+  function pageScrollY() {
+    var y = window.scrollY || window.pageYOffset || 0;
+    var de = document.documentElement ? (document.documentElement.scrollTop || 0) : 0;
+    var bd = document.body ? (document.body.scrollTop || 0) : 0;
+    return Math.max(y, de, bd);
+  }
+
+  function isShown(el) {
+    if (!el) return false;
+    var cs = null;
+    try { cs = window.getComputedStyle ? window.getComputedStyle(el) : null; } catch (e) { cs = null; }
+    if (cs && cs.display === 'none') return false;
+    // The More sheet transitions visibility over .46s on open: a sample
+    // taken in the first frame still reads 'hidden' even though the
+    // sheet is opening. An explicit .open class is the overlay's own
+    // statement that it is open, so it outranks the mid-transition
+    // computed value (the class is removed on close, so this cannot
+    // strand the lock on a closed sheet).
+    if (cs && cs.visibility === 'hidden' && !(el.classList && el.classList.contains('open'))) return false;
+    try { return el.getClientRects().length > 0; } catch (e) { return false; }
+  }
+
+  function anyOverlayOpen() {
+    var els = null;
+    try { els = document.querySelectorAll(OVERLAY_SELECTOR); } catch (e) { return false; }
+    for (var i = 0; i < els.length; i++) {
+      if (isShown(els[i])) return true;
+    }
+    return false;
+  }
+
+  // True when <body> itself is the scroll container in this render.
+  function bodyIsScroller() {
+    var body = document.body;
+    if (!body) return false;
+    var cs = null;
+    try { cs = window.getComputedStyle ? window.getComputedStyle(body) : null; } catch (e) { cs = null; }
+    var oy = cs ? (cs.overflowY || '') : '';
+    return (oy === 'auto' || oy === 'scroll') && body.scrollHeight > body.clientHeight + 1;
+  }
+
+  function applyLock() {
+    if (locked) return;
+    var body = document.body;
+    if (!body) return;
+    locked = true;
+    saved = {
+      y: pageScrollY(),
+      pin: !bodyIsScroller(),
+      position: body.style.position || '',
+      top: body.style.top || '',
+      left: body.style.left || '',
+      right: body.style.right || '',
+      width: body.style.width || '',
+      // Several overlays set body overflow:hidden themselves in their
+      // open path, synchronously before this lock engages. That value
+      // belongs to the overlay, not the page: release only happens once
+      // no overlay is visible, so the page's own value is restored as
+      // '' rather than resurrecting the overlay's lock.
+      overflow: (body.style.overflow === 'hidden') ? '' : (body.style.overflow || '')
+    };
+    if (document.documentElement) document.documentElement.classList.add('br-scroll-locked');
+    if (saved.pin) {
+      body.style.position = 'fixed';
+      body.style.top = (-saved.y) + 'px';
+      body.style.left = '0';
+      body.style.right = '0';
+      body.style.width = '100%';
+    }
+    body.style.overflow = 'hidden';
+  }
+
+  function releaseLock() {
+    if (!locked) return;
+    locked = false;
+    var body = document.body;
+    if (document.documentElement) document.documentElement.classList.remove('br-scroll-locked');
+    if (body && saved) {
+      body.style.position = saved.position;
+      body.style.top = saved.top;
+      body.style.left = saved.left;
+      body.style.right = saved.right;
+      body.style.width = saved.width;
+      body.style.overflow = saved.overflow;
+    }
+    var y = saved ? saved.y : 0;
+    saved = null;
+    if (y) {
+      // Restore on whichever element actually scrolls in this render;
+      // setting scrollTop on a non-scroller clamps to a no-op.
+      try { window.scrollTo(0, y); } catch (e) {}
+      if (document.documentElement) document.documentElement.scrollTop = y;
+      if (document.body) document.body.scrollTop = y;
+    }
+  }
+
+  function reconcile() {
+    if (manualCount > 0 || anyOverlayOpen()) applyLock();
+    else releaseLock();
+  }
+
+  // Reconcile at most once per frame no matter how chatty the DOM gets,
+  // plus one delayed pass: several overlays finish becoming visible a
+  // beat after the mutation that announced them (visibility transitions,
+  // double-rAF .open adds), and no further mutation follows to re-check.
+  var reconcileQueued = false;
+  var followupTimer = null;
+  function queueReconcile() {
+    if (!reconcileQueued) {
+      reconcileQueued = true;
+      var run = function () { reconcileQueued = false; reconcile(); };
+      if (window.requestAnimationFrame) window.requestAnimationFrame(run);
+      else setTimeout(run, 16);
+    }
+    if (!followupTimer) {
+      followupTimer = setTimeout(function () { followupTimer = null; reconcile(); }, 500);
+    }
+  }
+
+  if (typeof MutationObserver !== 'undefined') {
+    try {
+      var observer = new MutationObserver(queueReconcile);
+      var startObserving = function () {
+        if (document.documentElement) {
+          observer.observe(document.documentElement, {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ['class', 'style', 'hidden']
+          });
+        }
+        reconcile();
+      };
+      if (document.documentElement) startObserving();
+      else document.addEventListener('DOMContentLoaded', startObserving);
+    } catch (e) { /* observer is an enhancement; manual API still works */ }
+  }
+  window.addEventListener('pageshow', queueReconcile);
+
+  // Touch guard: while locked, only a drag that a scrollable element
+  // inside the overlay can still consume is allowed through.
+  var lastTouch = null;
+  document.addEventListener('touchstart', function (e) {
+    if (e.touches && e.touches.length === 1) {
+      lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else {
+      lastTouch = null;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!locked) return;
+    if (!e.touches || e.touches.length !== 1) return; // pinch etc. is not scroll
+    var t = e.touches[0];
+    var dx = lastTouch ? t.clientX - lastTouch.x : 0;
+    var dy = lastTouch ? t.clientY - lastTouch.y : 0;
+    lastTouch = { x: t.clientX, y: t.clientY };
+    var node = e.target;
+    var depth = 0;
+    var vertical = Math.abs(dy) >= Math.abs(dx);
+    while (node && node !== document && depth < 16) {
+      var tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+      // Form controls and canvases consume touches without scrolling the
+      // page (range sliders, text selection, charts); leave them alone.
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'CANVAS') return;
+      if (node.isContentEditable) return;
+      var can = false;
+      try {
+        var cs = window.getComputedStyle ? window.getComputedStyle(node) : null;
+        if (cs) {
+          if (vertical) {
+            var oy = cs.overflowY || '';
+            if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+              if (dy < 0 && node.scrollTop + node.clientHeight < node.scrollHeight - 1) can = true;
+              else if (dy > 0 && node.scrollTop > 0) can = true;
+              else if (dy === 0) can = true;
+            }
+          } else {
+            var ox = cs.overflowX || '';
+            if ((ox === 'auto' || ox === 'scroll') && node.scrollWidth > node.clientWidth + 1) {
+              if (dx < 0 && node.scrollLeft + node.clientWidth < node.scrollWidth - 1) can = true;
+              else if (dx > 0 && node.scrollLeft > 0) can = true;
+              else if (dx === 0) can = true;
+            }
+          }
+        }
+      } catch (err) { /* fall through and keep walking up */ }
+      if (can) return; // the gesture belongs to the overlay's own scroller
+      node = node.parentElement || node.parentNode;
+      depth++;
+    }
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  window.brScrollLock = {
+    acquire: function () { manualCount++; reconcile(); },
+    release: function () { if (manualCount > 0) manualCount--; reconcile(); },
+    isLocked: function () { return locked; },
+    refresh: reconcile
+  };
+})();
+/* br-scroll-lock:end */
+
 /* br-ptr:start */
 // Pull-to-refresh (PWA, v1). Touch-only, in-place, and opt-in per page: a
 // page registers window.brPageRefresh() returning a Promise that resolves

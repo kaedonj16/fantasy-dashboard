@@ -62240,6 +62240,52 @@ html.theme-transition *, html.theme-transition *::before, html.theme-transition 
 }
 
 /* ============================================================
+   SCROLL CONTAINMENT (Kaedon, 2026-11-26)
+   While any modal, popover, dropdown or sheet is open, scrolling
+   belongs to that overlay only, never the page behind it. The JS
+   half is the br-scroll-lock module in app.js (refcounted body lock,
+   position:fixed on iOS, touch guard); these rules stop scroll
+   chaining at each overlay's own boundary. Intentional inner
+   horizontal scrollers keep their own scroll: contain only stops
+   the gesture from escaping, it never disables the scroller.
+   ============================================================ */
+html.br-scroll-locked,
+html.br-scroll-locked body {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+/* Backdrops and overlay shells: a gesture that starts here has
+   nowhere to scroll, and must not chain to the background. */
+.player-modal-overlay,
+.team-modal-overlay,
+.for-modal-overlay,
+.rzm-modal-overlay,
+.modal-overlay,
+#tiTradesOverlay,
+.br-sheet-scrim,
+.rz-bs-backdrop,
+.nt-sheet-backdrop,
+.br-asst-scrim {
+    overscroll-behavior: none;
+}
+/* Each overlay's own scrollable body: scrolls freely inside, and
+   the gesture dies at its top/bottom edge instead of moving the
+   page behind it. */
+.player-modal-body,
+.team-modal-body,
+.for-modal-body,
+.rzm-modal-body,
+.td-body,
+.br-asst-body,
+.br-sheet-panel,
+.changelog-dropdown,
+.rz-bs-body,
+.nt-sheet-body,
+#rkModalContent {
+    overscroll-behavior: contain;
+}
+
+/* ============================================================
    MERGED: icons.css (PNG-based icon system)
    Do not edit here -- edit static/icons.css and re-run the merge.
    See scripts/merge_icon_css.py
