@@ -856,8 +856,10 @@ def test_refresh_runs_are_bound_to_the_page_they_started_on():
     and the landing page's document used to swap into the new page's root.
     """
     src = _freshness_iife()
-    # Both refresh paths pin the URL they started on...
-    assert src.count("var startHref = location.href;") == 2
+    # All three refresh paths pin the URL they started on (manual
+    # doRefresh, the silent auto-revalidate, and the shared targeted
+    # section refresh used by pull-to-refresh)...
+    assert src.count("var startHref = location.href;") == 3
     assert "fetchFreshDocument(beforeTs, controller ? controller.signal : undefined, startHref)" in src
     # ...fetch that pinned URL instead of the live location...
     assert "function fetchFreshDocument(beforeTs, signal, url)" in src

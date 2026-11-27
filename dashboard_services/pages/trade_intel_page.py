@@ -914,6 +914,35 @@ def build_trade_intel_body(
       }})();
 
       window.loadTIPage = loadTIPage;
+
+      // Targeted refresh: reload the current trending page through the
+      // page's own loader (tab/position filters are applied inside
+      // renderTI from the same closure state, so they are preserved).
+      // Settles when the loading state clears; the loader's
+      // unavailable message rejects.
+      window.brPageRefresh = function() {{
+        var grid = document.getElementById('tiGrid');
+        if (!grid || grid.isConnected === false) {{
+          delete window.brPageRefresh;
+          return Promise.resolve();
+        }}
+        loadTIPage(currentPage);
+        return new Promise(function(resolve, reject) {{
+          var started = Date.now();
+          var iv = setInterval(function() {{
+            var loadingEl = document.getElementById('tiLoading');
+            if (loadingEl && loadingEl.textContent.indexOf('Trade data unavailable') !== -1) {{
+              clearInterval(iv); reject(new Error('trade intel load failed')); return;
+            }}
+            if (Date.now() - started > 300 && loadingEl && loadingEl.style.display === 'none') {{
+              clearInterval(iv); resolve(); return;
+            }}
+            if (Date.now() - started > 20000) {{
+              clearInterval(iv); reject(new Error('trade intel load timed out'));
+            }}
+          }}, 120);
+        }});
+      }};
     }})();
     </script>
 {_ti_embedded_script}

@@ -7633,6 +7633,37 @@ _AM_JS = r"""
   amUpdateContextLine();
   if (!_presetLoaded) fetchData();
   loadOwnedRoster(); _loadMovers();
+
+  // Targeted refresh: force the board's own loader past its
+  // board-signature guard and re-run it with the live state (metric,
+  // seasons, week range, filters, sort and pins all live in `state`
+  // and are read, never reset). The command bar is user state, so
+  // nothing here swaps DOM outside the table the loader already owns.
+  // Settles when the fetch flag clears; the board's Retry state
+  // rejects so the refresh falls back instead of claiming success.
+  window.brPageRefresh = function() {
+    var tbl = document.getElementById('amTable');
+    if (!tbl || tbl.isConnected === false) {
+      delete window.brPageRefresh;
+      return Promise.resolve();
+    }
+    state._boardSig = null;
+    fetchData();
+    _loadMovers();
+    return new Promise(function(resolve, reject) {
+      var started = Date.now();
+      var iv = setInterval(function() {
+        if (!state.fetching) {
+          clearInterval(iv);
+          if (document.getElementById('amRetryBtn')) reject(new Error('advanced metrics load failed'));
+          else resolve();
+        } else if (Date.now() - started > 25000) {
+          clearInterval(iv);
+          reject(new Error('advanced metrics load timed out'));
+        }
+      }, 120);
+    });
+  };
   // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph
   // link), or when ?og=1 (the headless social-preview render mode).
   const _isOgRender = _initParams.get('og') === '1';

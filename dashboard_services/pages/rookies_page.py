@@ -1934,6 +1934,41 @@ def build_prospects_body(is_admin: bool = False) -> str:
         rkLoadFailed();
       });
   }
+
+  // Targeted refresh: reload the board for the class on screen
+  // through the same path as the class selector. Position filters,
+  // search and sort are globals rkRender re-applies, so they are
+  // preserved. Settles when the board reports loaded; the board's
+  // error state rejects.
+  window.brPageRefresh = function() {
+    var list = document.getElementById('rkList');
+    if (!list || list.isConnected === false) {
+      delete window.brPageRefresh;
+      return Promise.resolve();
+    }
+    rkSetClass(rkViewSel);
+    return new Promise(function(resolve, reject) {
+      var started = Date.now();
+      var iv = setInterval(function() {
+        var err = document.getElementById('rkError');
+        if (err && err.style.display !== 'none' && err.textContent.trim()) {
+          clearInterval(iv); reject(new Error('prospects load failed')); return;
+        }
+        if (rkLoaded) { clearInterval(iv); resolve(); return; }
+        // rkLoadFailed with rows already on the board keeps those rows
+        // and hides both states: that is the loader's own settled
+        // failure mode, not a hang.
+        var loadEl = document.getElementById('rkLoading');
+        if (Date.now() - started > 800 && loadEl && loadEl.style.display === 'none' &&
+            document.querySelector('#rkList .pr-player-row')) {
+          clearInterval(iv); resolve(); return;
+        }
+        if (Date.now() - started > 20000) {
+          clearInterval(iv); reject(new Error('prospects load timed out'));
+        }
+      }, 120);
+    });
+  };
 </script>
 """
     body = body.replace("<!--RK_CLASS_OPTIONS-->", _rk_class_options())

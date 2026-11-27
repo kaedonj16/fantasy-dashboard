@@ -1307,6 +1307,32 @@ function init(){{
   if(window.addEventListener){{window.addEventListener("popstate",function(){{readUrl();DETAIL=null;DETAIL_TEAM=null;render();}});}}
   render();
 }}
+// Targeted refresh: re-run the page's own rankings loader. Season,
+// view, team and sort live in `state` and are preserved (an open team
+// profile re-renders from the fresh payload through render()). Settles
+// when the payload lands; the loader's Retry state rejects.
+window.brPageRefresh = function(){{
+  var tbl = document.getElementById('ntTbl');
+  if (!tbl || tbl.isConnected === false) {{
+    delete window.brPageRefresh;
+    return Promise.resolve();
+  }}
+  DATA = null;
+  loadRankings();
+  return new Promise(function(resolve, reject){{
+    var started = Date.now();
+    var iv = setInterval(function(){{
+      if (document.getElementById('ntRetryAll')) {{
+        clearInterval(iv); reject(new Error('nfl teams load failed'));
+      }} else if (DATA) {{
+        clearInterval(iv); resolve();
+      }} else if (Date.now() - started > 20000) {{
+        clearInterval(iv); reject(new Error('nfl teams load timed out'));
+      }}
+    }}, 120);
+  }});
+}};
+
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 }})();
 </script>

@@ -666,6 +666,7 @@ _PAGE_CSS = """
 _PAGE_JS = """
     (function() {
       let view = 'drafts'; // drafts | adp | board
+      let boardDraftId = null;
       let currentPage = 1;
       let paginationData = null;
       let abortCtl = null;
@@ -710,7 +711,7 @@ _PAGE_JS = """
         if (abortCtl) abortCtl.abort();
         abortCtl = new AbortController();
         statusEl.textContent = 'Loading drafts...';
-        fetch('/api/draft-database?' + params(page - 1), { signal: abortCtl.signal })
+        return fetch('/api/draft-database?' + params(page - 1), { signal: abortCtl.signal })
           .then(r => r.json())
           .then(data => {
             if (data.error) throw new Error(data.error);
@@ -813,13 +814,14 @@ _PAGE_JS = """
       }
       function openBoard(draftId) {
         view = 'board';
+        boardDraftId = draftId;
         document.getElementById('ddbListView').style.display = 'none';
         document.getElementById('ddbAdpView').style.display = 'none';
         const bv = document.getElementById('ddbBoardView');
         bv.style.display = '';
         bv.innerHTML = '<button class="ddb-back" id="ddbBackBtn">Back to drafts</button><div class="ddb-status">Loading board...</div>';
         document.getElementById('ddbBackBtn').addEventListener('click', showList);
-        fetch('/api/draft-database/' + encodeURIComponent(draftId) + '/board')
+        return fetch('/api/draft-database/' + encodeURIComponent(draftId) + '/board')
           .then(r => r.json())
           .then(data => { if (data.error) throw new Error(data.error); renderBoard(data); })
           .catch(() => { bv.innerHTML = '<button class="ddb-back" id="ddbBackBtn">Back to drafts</button><div class="ddb-empty">This board could not be loaded.</div>'; document.getElementById('ddbBackBtn').addEventListener('click', showList); });
@@ -879,7 +881,7 @@ _PAGE_JS = """
         const el = document.getElementById('ddbAdpBody');
         el.innerHTML = '<div class="ddb-status">Loading ADP...</div>';
         const p = params(0);
-        fetch('/api/draft-database/adp?' + p)
+        return fetch('/api/draft-database/adp?' + p)
           .then(r => r.json())
           .then(data => {
             if (data.error) throw new Error(data.error);
@@ -943,6 +945,26 @@ _PAGE_JS = """
         deb = setTimeout(() => { state.q = this.value.trim(); if (view !== 'board') loadPage(1); }, 300);
       });
       window.ddbLoadPage = loadPage;
+
+      // Targeted refresh: reload whichever view is on screen through
+      // its own loader (list page, ADP, or the open draft board).
+      // Filters, search and page live in the closure the loaders
+      // read, so all of them are preserved.
+      window.brPageRefresh = function() {
+        // The loaders render their own error states and resolve, so
+        // the hook checks for those states before claiming success.
+        if (view === 'adp') return loadAdp().then(() => {
+          const el = document.getElementById('ddbAdpBody');
+          if (el && el.textContent.indexOf('could not be loaded') !== -1) throw new Error('adp load failed');
+        });
+        if (view === 'board' && boardDraftId) return openBoard(boardDraftId).then(() => {
+          const bv = document.getElementById('ddbBoardView');
+          if (bv && bv.textContent.indexOf('could not be loaded') !== -1) throw new Error('board load failed');
+        });
+        return loadPage(currentPage).then(() => {
+          if (statusEl.textContent === 'Error loading drafts') throw new Error('draft database load failed');
+        });
+      };
       loadPage(1);
     })();
 """

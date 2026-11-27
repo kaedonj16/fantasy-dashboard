@@ -38,7 +38,13 @@ def test_controller_is_touch_only_and_hook_gated():
     end = APP_JS.index("/* br-ptr:end */")
     block = APP_JS[start:end]
     assert "addEventListener('touchstart'" in block
-    assert "typeof window.brPageRefresh !== 'function'" in block
+    # Hook-gated through ptrHook(): the page's own brPageRefresh when it
+    # registered one, else the shared targeted section refresh when it
+    # is eligible on this page. Neither means no gesture.
+    assert "function ptrHook()" in block
+    assert "typeof window.brPageRefresh === 'function'" in block
+    assert "window.brSectionRefreshEligible()" in block
+    assert "if (!ptrHook()) return; // no hook, no gesture" in block
     # No reload fallback for pages without a hook.
     assert "location.reload" not in block
 

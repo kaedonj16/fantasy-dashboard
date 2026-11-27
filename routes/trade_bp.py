@@ -1126,6 +1126,36 @@ def page_trade_database(platform: str, season: int, league_id: str):
       }};
 
       window.loadTDBPage = loadTDBPage;
+
+      // Targeted refresh: reload the current results page through the
+      // page's own loader. Filters, sort and the selected players live
+      // in the same closure the loader reads, so all of them are
+      // preserved (this is also why the page is swap-blocked for the
+      // background pass: only its own loader may repaint the list).
+      // Settles when the loading state clears.
+      window.brPageRefresh = function() {{
+        var list = document.getElementById('tdbList');
+        if (!list || list.isConnected === false) {{
+          delete window.brPageRefresh;
+          return Promise.resolve();
+        }}
+        loadTDBPage(currentPage);
+        return new Promise(function(resolve, reject) {{
+          var started = Date.now();
+          var iv = setInterval(function() {{
+            var loadingEl = document.getElementById('tdbLoading');
+            if (statusEl && statusEl.textContent === 'Error loading trades') {{
+              clearInterval(iv); reject(new Error('trade database load failed')); return;
+            }}
+            if (Date.now() - started > 300 && loadingEl && loadingEl.style.display === 'none') {{
+              clearInterval(iv); resolve(); return;
+            }}
+            if (Date.now() - started > 20000) {{
+              clearInterval(iv); reject(new Error('trade database load timed out'));
+            }}
+          }}, 120);
+        }});
+      }};
     }})();
     </script>
     """
