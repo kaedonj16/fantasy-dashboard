@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-11-26",
         "tag": "update",
-        "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your standings seed, with division winners ahead of wild cards.",
+        "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your place in your division.",
         "link": "/dashboard"
     },
     {

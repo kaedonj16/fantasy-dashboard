@@ -6,22 +6,27 @@ live in app.py are lazy-imported inside the builder (request time).
 from __future__ import annotations
 
 
-def hero_record_and_seed(team_rows, viewer_owner, owner_to_rid=None,
+def hero_record_and_rank(team_rows, viewer_owner, owner_to_rid=None,
                          by_rid=None, div_records=None):
-    """``(record, seed)`` for the dashboard hero's "Your record" card.
+    """``(record, rank)`` for the dashboard hero's "Your record" card.
 
     The record respects divisions the same way the standings tables do:
     in a league with 2+ divisions it reads ``"8-2 (5-0)"`` (overall, then
-    vs division opponents). The seed is the standings seed from
-    ``assign_playoff_seeds``: division winners seeded ahead of wild cards,
-    tiebreak wins, then division win%, then PF, then PA. Flat leagues get
-    the plain record and the same seed chain with no division step, so
-    their hero matches their standings rail too.
+    vs division opponents). The rank is the viewer's place *inside his own
+    division*, ordered the way the standings table orders a division:
+    overall wins, then division win%, then PF, then PA. So 2nd in his
+    division reads "2nd" even when his playoff seed is lower. Flat
+    leagues get the plain record and the overall standings seed from
+    ``assign_playoff_seeds`` (wins, division win%, PF, PA).
 
     ``team_rows`` are mappings with owner/Wins/Losses/Ties/PF/PA keys.
     Returns ``None`` when the viewer has no row.
     """
-    from utils.standings_divisions import assign_playoff_seeds, format_record
+    from utils.standings_divisions import (
+        assign_playoff_seeds,
+        division_win_pct,
+        format_record,
+    )
 
     rows = list(team_rows or [])
     if not rows or not viewer_owner:
@@ -61,21 +66,42 @@ def hero_record_and_seed(team_rows, viewer_owner, owner_to_rid=None,
         except (TypeError, ValueError):
             return 0.0
 
-    _seed_teams = [
-        {"wins": _num(r, "Wins"), "ties": _num(r, "Ties"),
-         "pf": _num(r, "PF"), "pa": _num(r, "PA"),
-         "division": _div_for(r.get("owner")),
-         "div_record": _div_record_for(r.get("owner"))}
-        for r in rows
-    ]
-    _seeds = assign_playoff_seeds(_seed_teams)
-    for _i, _row in enumerate(rows):
-        if str(_row.get("owner")) == str(viewer_owner):
-            _record = format_record(
-                int(_num(_row, "Wins")), int(_num(_row, "Losses")),
-                int(_num(_row, "Ties")), _div_record_for(_row.get("owner")),
+    for _row in rows:
+        if str(_row.get("owner")) != str(viewer_owner):
+            continue
+        _record = format_record(
+            int(_num(_row, "Wins")), int(_num(_row, "Losses")),
+            int(_num(_row, "Ties")), _div_record_for(_row.get("owner")),
+        )
+        _viewer_div = _div_for(_row.get("owner"))
+        if _use_div and _viewer_div:
+            # Place inside the viewer's own division, in the standings
+            # table's within-division order.
+            _group = [r for r in rows if _div_for(r.get("owner")) == _viewer_div]
+            _group.sort(key=lambda r: (
+                -_num(r, "Wins"),
+                -division_win_pct(_div_record_for(r.get("owner"))),
+                -_num(r, "PF"),
+                _num(r, "PA"),
+            ))
+            _rank = next(
+                i + 1 for i, r in enumerate(_group)
+                if str(r.get("owner")) == str(viewer_owner)
             )
-            return _record, int(_seeds[_i])
+            return _record, int(_rank)
+        _seed_teams = [
+            {"wins": _num(r, "Wins"), "ties": _num(r, "Ties"),
+             "pf": _num(r, "PF"), "pa": _num(r, "PA"),
+             "division": _div_for(r.get("owner")),
+             "div_record": _div_record_for(r.get("owner"))}
+            for r in rows
+        ]
+        _seeds = assign_playoff_seeds(_seed_teams)
+        _idx = next(
+            i for i, r in enumerate(rows)
+            if str(r.get("owner")) == str(viewer_owner)
+        )
+        return _record, int(_seeds[_idx])
     return None
 
 
@@ -311,10 +337,10 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
         if _vname and _vmask is not None and bool(_vmask.any()):
             _vrow = _hs[_vmask].iloc[0]
             # Record + rank respect divisions, matching the standings rail:
-            # "8-2 (5-0)" and the playoff seed (division winners first).
+            # "8-2 (5-0)", and the rank is his place in his own division.
             # Fall back to the plain record / overall rank if the mapping
-            # needed for the seed math is unavailable.
-            _hero_rs = hero_record_and_seed(
+            # needed for the division math is unavailable.
+            _hero_rs = hero_record_and_rank(
                 _hs.to_dict("records"), _vname,
                 owner_to_rid=_owner_to_rid,
                 by_rid=(_div_info or {}).get("by_rid") or {},
