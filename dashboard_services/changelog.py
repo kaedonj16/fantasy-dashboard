@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-11-26",
         "tag": "update",
-        "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your standings seed, with division winners ahead of wild cards.",
+        "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your place in your division.",
         "link": "/dashboard"
     },
     {
@@ -15,12 +15,6 @@ CHANGELOG = [
         "tag": "fix",
         "text": "Fixed ScoreZone's new field on the live site: it now actually angles back into the distance as designed, and the goal posts sit small behind each end zone instead of hanging over them.",
         "link": "/scorezone"
-    },
-    {
-        "date": "2026-11-26",
-        "tag": "update",
-        "text": "Refreshing data now opens a popup the moment it starts, so you can see it working, watch it finish, and retry right there if it fails. Refresh is also faster everywhere: each page now reloads just its own data or the sections that changed, instead of rebuilding the whole page.",
-        "link": "/dashboard"
     },
     {
         "date": "2026-11-26",
