@@ -576,9 +576,104 @@ def test_field_board_is_scorezone_only_and_falls_back_to_the_bar():
     # 2026-11-26). Pin the rule it lives in, not just the string.
     stage_rule = DASHBOARD_CSS.split(".rz-fb-stage {", 1)[1].split("}", 1)[0]
     assert "perspective: 620px" in stage_rule
+    # Mock-exact geometry (2026-11-26): stage 230px tall, plane inset
+    # 6% / top 38px / bottom 18px, posts at the mock's size and anchor,
+    # dark bands and the dark selected-pill treatment in the mock's
+    # literal colours, and the solid ezDark end-zone tint in both
+    # renderers (no alpha tint over the bands in dark mode).
+    assert "height: 230px" in stage_rule
+    assert "left: 6%" in DASHBOARD_CSS and "top: 38px" in DASHBOARD_CSS
+    assert "width: 38.4px; height: 72px" in DASHBOARD_CSS
+    assert "left: calc(6% - 22px)" in DASHBOARD_CSS
+    assert "#1c3049" in DASHBOARD_CSS and "#16273c" in DASHBOARD_CSS
+    assert "#1d3a5f" in DASHBOARD_CSS and "#5b93e6" in DASHBOARD_CSS
+    assert "ezDark" in app_js and "ezDark" in SCOREZONE_JS
+    # GB's dark end zone is the mock's hand-set literal #1e3527 in both
+    # renderers: the ezDark formula cannot reach it from this palette's
+    # grey-teal GB primary #203731 (it lands at #1e2a26, barely green),
+    # so GB carries the literal, the same method the mock itself uses.
+    assert "ezLiteral = { GB: '#1e3527' }" in app_js
+    assert "ezLiteral = { GB: '#1e3527' }" in SCOREZONE_JS
+    assert "ezTint(away" in app_js and "ezTint(away" in SCOREZONE_JS
+    assert "ezTint(home" in app_js and "ezTint(home" in SCOREZONE_JS
     assert ".rz-fb-post {" in DASHBOARD_CSS and ".rz-fb-arcdot {" in DASHBOARD_CSS
     assert "rz-fb-post-l" in app_js and "rz-fb-post-l" in SCOREZONE_JS
+    # Profile posts (Kaedon, 2026-11-27, from his ESPN screenshot;
+    # the mock's flat front-on post and the yawed fork both read
+    # wrong): seen from the side, facing along the field -- two thin
+    # uprights in depth, widened apart (front upright x=11 on the
+    # outer side, back upright x=19 on the field side), bottoms
+    # joined by a crossbar that runs diagonally in depth (front
+    # bottom y=41, back bottom y=37, meeting at (15, 39)), one
+    # short stem with a gentle sweep back down to a small
+    # dark-grey base pad (postPad, pad middle at y=55.5, the
+    # ground anchor height, so the CSS anchoring above is
+    # untouched). The back upright's top (y=18) sits on the same
+    # angle as the crossbar: the tops drop the crossbar's own 4
+    # units (41 - 37) over the uprights' 8-unit separation (front
+    # top y=22, back top y=18), so the U reads as one slanted
+    # piece instead of the back upright spiking past it. The whole
+    # post is ONE flat path in a single stroke of #e8a90c with no
+    # shading at all: the cylindrical shading (deep gold #c98f06,
+    # shade edges #6e4a00 / #8a5f00, highlight #ffe066, offset
+    # copies) and the .rz-fb-post CSS drop-shadow are gone, the
+    # post flat gold to its edges. The right post is the same body
+    # mirrored (postBodyR is the same single path). Both renderers
+    # must carry all of it.
+    post_d = "M19 18 V37 L15 39 M15 39 C15 42.8 13.4 45.5 13.4 51 M15 39 L11 41 V22"
+    assert post_d in app_js and post_d in SCOREZONE_JS
+    assert "M19 13.5" not in app_js and "M19 13.5" not in SCOREZONE_JS
+    assert "#c98f06" not in app_js and "#c98f06" not in SCOREZONE_JS
+    assert "#6e4a00" not in app_js and "#6e4a00" not in SCOREZONE_JS
+    assert "#8a5f00" not in app_js and "#8a5f00" not in SCOREZONE_JS
+    assert "#ffe066" not in app_js and "#ffe066" not in SCOREZONE_JS
+    assert "scale(-1 1)" in app_js and "scale(-1 1)" in SCOREZONE_JS
+    assert "postBodyR" in app_js and "postBodyR" in SCOREZONE_JS
+    assert "postPad" in app_js and "postPad" in SCOREZONE_JS
+    assert 'fill="#5d6773"' in app_js and 'fill="#5d6773"' in SCOREZONE_JS
+    post_rule = DASHBOARD_CSS.split(".rz-fb-post {", 1)[1].split("}", 1)[0]
+    assert "drop-shadow" not in post_rule
+    # Field slab (Kaedon, 2026-11-27, ESPN's field thickness): a
+    # plane-sized layer behind the field, same box and rotateX,
+    # shifted down in plane space so its rim reads as the field's
+    # dark side face along the near and side edges. Both renderers
+    # emit it, the CSS carries the geometry at both breakpoints,
+    # and the dark edge tone is pinned.
+    assert "rz-fb-slab" in app_js and "rz-fb-slab" in SCOREZONE_JS
+    slab_rule = DASHBOARD_CSS.split(".rz-fb-slab {", 1)[1].split("}", 1)[0]
+    assert "rotateX(49deg) translateY(10px) scale(1.02)" in slab_rule
+    assert "left: 6%" in slab_rule and "top: 38px" in slab_rule and "bottom: 18px" in slab_rule
+    assert ".rz-fb-slab { left: 10%; right: 10%; top: 32px; bottom: 14px; }" in DASHBOARD_CSS
+    assert ":root[data-theme=\"dark\"] .rz-fb-slab { background: #0e1926; }" in DASHBOARD_CSS
     assert "rz-fb-arcdot" in app_js and "rz-fb-arcdot" in SCOREZONE_JS
+    # EZ label facing (mock scheme): the left label reads bottom-to-top
+    # (vertical-rl rotated 180deg), the right reads top-to-bottom; both
+    # renderers must emit the side classes or the left label faces the
+    # wrong way again.
+    ezl_rule = DASHBOARD_CSS.split(".rz-fb-ez-l > span {", 1)[1].split("}", 1)[0]
+    assert "rotate(180deg)" in ezl_rule
+    assert "rz-fb-ez-l" in app_js and "rz-fb-ez-l" in SCOREZONE_JS
+    assert "rz-fb-ez-r" in app_js and "rz-fb-ez-r" in SCOREZONE_JS
+    # Air layer: pass flights render in stage space above the plane
+    # (the plane's own layout box, untransformed), never inside the
+    # tilted plane, so the rotateX cannot flatten their dots. The layer
+    # geometry must track the plane's at both breakpoints.
+    air_rule = DASHBOARD_CSS.split(".rz-fb-air { position: absolute;", 1)[1].split("}", 1)[0]
+    assert "left: 6%" in air_rule and "top: 38px" in air_rule and "bottom: 18px" in air_rule
+    assert ".rz-fb-air { left: 10%; right: 10%; top: 32px; bottom: 14px; }" in DASHBOARD_CSS
+    # Cascade order: at equal specificity the later rule wins, so the
+    # base air rule must precede the phone override or phone width
+    # silently keeps the 6% desktop box and the arc endpoints drift
+    # off the ground spots.
+    assert DASHBOARD_CSS.index(".rz-fb-air { position: absolute;") \
+        < DASHBOARD_CSS.index(".rz-fb-air { left: 10%;")
+    assert "rz-fb-air" in app_js and "rz-fb-air" in SCOREZONE_JS
+    assert "calc(50% - " in app_js and "calc(50% - " in SCOREZONE_JS
+    # The air layer is a sibling of the plane, so it must carry the
+    # team colour itself: --rz-fb-color is set on the field element,
+    # and without the layer's own copy the arc dots paint transparent.
+    assert 'rz-fb-air" style="--rz-fb-color:' in app_js
+    assert 'rz-fb-air" style="--rz-fb-color:' in SCOREZONE_JS
     assert ".rz-fb-dot {" in DASHBOARD_CSS
     assert "width: 7px; height: 7px" in DASHBOARD_CSS
     assert ".rz-fb-ball {" in DASHBOARD_CSS
@@ -671,7 +766,19 @@ console.log(JSON.stringify({{drive: drive, neg: neg, sack: sack, mixed: mixed, n
     # lifted as a dotted arc (runs keep their ground segments, so exactly
     # two rz-fb-seg spans), and no 40s left on the yard scale.
     assert fb.count("rz-fb-post-l") == 1 and fb.count("rz-fb-post-r") == 1
+    # Field slab: exactly one slab layer, emitted before the field plane.
+    assert fb.count("rz-fb-slab") == 1
+    assert fb.index("rz-fb-slab") < fb.index("rz-fb-field")
     assert "rz-fb-arcdot" in fb and "rz-fb-arcshadow" in fb
+    # EZ labels carry their side classes (left reads bottom-to-top).
+    assert fb.count("rz-fb-ez-l") == 1 and fb.count("rz-fb-ez-r") == 1
+    # The pass flight sits in the air layer after the plane closes, in
+    # stage space: no arcdot may appear before the air layer opens, and
+    # its dots ride calc(50% - lift px) tops, not plane % tops.
+    assert "rz-fb-air" in fb
+    assert "rz-fb-arcdot" not in fb.split("rz-fb-air", 1)[0]
+    assert "top:calc(50% - " in fb
+    assert 'class="rz-fb-air" style="--rz-fb-color:' in fb
     assert fb.count('class="rz-fb-seg"') == 2
     assert ">40<" not in fb
     assert "LIVE DRIVE" in fb and "3 plays" in fb and "24 yds" in fb
@@ -680,6 +787,8 @@ console.log(JSON.stringify({{drive: drive, neg: neg, sack: sack, mixed: mixed, n
     assert ">1st & 10<" in fb and " · CAR 36" not in fb
     bare = out["fbBare"]
     assert "rz-fb-field" in bare and "rz-fb-dot" not in bare and "LIVE DRIVE" not in bare
+    # No drive, no flight: the air layer is emitted only with a pass.
+    assert "rz-fb-air" not in bare
     # A plain modal render (no fieldBoard opt-in) keeps the current drive
     # bar byte-for-byte in behaviour, cue included: no field board at all.
     modal = out["modalHtml"]
@@ -806,7 +915,7 @@ console.log(JSON.stringify(out));
     # Exactly one new play on a live render: the arrival animates in.
     arr = out["arrival"]
     assert "rz-fb-anim-play" in arr and "rz-fb-seg-new" in arr
-    assert "rz-fb-dot is-new" in arr and "--rz-fb-ball-from:35.6%" in arr
+    assert "rz-fb-dot is-new" in arr and "--rz-fb-ball-from:35%" in arr
     assert "TOUCHDOWN" not in arr and "rz-fb-score-pop" not in arr
     # The same state re-rendered does not replay.
     assert "rz-fb-anim" not in out["repeat"]

@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-11-26",
         "tag": "fix",
+        "text": "ScoreZone's field now matches its intended design: a deeper trapezoid shape, goal posts standing clear behind each end zone, cleaner field and end-zone colors in dark mode, and a selected game pill you can actually read in dark mode.",
+        "link": "/scorezone"
+    },
+    {
+        "date": "2026-11-26",
+        "tag": "fix",
         "text": "Fixed the Jump to bar on the phone dashboard: tapping a section now scrolls straight to it in the same page, instead of reloading the dashboard.",
         "link": "/dashboard"
     },
