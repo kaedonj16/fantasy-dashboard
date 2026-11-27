@@ -5,6 +5,80 @@ live in app.py are lazy-imported inside the builder (request time).
 """
 from __future__ import annotations
 
+
+def hero_record_and_seed(team_rows, viewer_owner, owner_to_rid=None,
+                         by_rid=None, div_records=None):
+    """``(record, seed)`` for the dashboard hero's "Your record" card.
+
+    The record respects divisions the same way the standings tables do:
+    in a league with 2+ divisions it reads ``"8-2 (5-0)"`` (overall, then
+    vs division opponents). The seed is the standings seed from
+    ``assign_playoff_seeds``: division winners seeded ahead of wild cards,
+    tiebreak wins, then division win%, then PF, then PA. Flat leagues get
+    the plain record and the same seed chain with no division step, so
+    their hero matches their standings rail too.
+
+    ``team_rows`` are mappings with owner/Wins/Losses/Ties/PF/PA keys.
+    Returns ``None`` when the viewer has no row.
+    """
+    from utils.standings_divisions import assign_playoff_seeds, format_record
+
+    rows = list(team_rows or [])
+    if not rows or not viewer_owner:
+        return None
+    by_rid = by_rid or {}
+    div_records = div_records or {}
+
+    def _rid_for(owner):
+        rid = (owner_to_rid or {}).get(str(owner))
+        try:
+            return int(rid)
+        except (TypeError, ValueError):
+            return None
+
+    def _div_for(owner):
+        rid_i = _rid_for(owner)
+        if rid_i is None:
+            return 0
+        try:
+            return int(by_rid.get(rid_i) or by_rid.get(str(rid_i)) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    _use_div = len({d for d in (_div_for(r.get("owner")) for r in rows) if d}) >= 2
+
+    def _div_record_for(owner):
+        if not _use_div or not _div_for(owner):
+            return None
+        rid_i = _rid_for(owner)
+        if rid_i is None:
+            return None
+        return div_records.get(rid_i) or div_records.get(str(rid_i)) or (0, 0, 0)
+
+    def _num(row, key):
+        try:
+            return float(row.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    _seed_teams = [
+        {"wins": _num(r, "Wins"), "ties": _num(r, "Ties"),
+         "pf": _num(r, "PF"), "pa": _num(r, "PA"),
+         "division": _div_for(r.get("owner")),
+         "div_record": _div_record_for(r.get("owner"))}
+        for r in rows
+    ]
+    _seeds = assign_playoff_seeds(_seed_teams)
+    for _i, _row in enumerate(rows):
+        if str(_row.get("owner")) == str(viewer_owner):
+            _record = format_record(
+                int(_num(_row, "Wins")), int(_num(_row, "Losses")),
+                int(_num(_row, "Ties")), _div_record_for(_row.get("owner")),
+            )
+            return _record, int(_seeds[_i])
+    return None
+
+
 def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
     from app import (  # noqa: E402  (lazy: avoids a circular import at module load)
         _scorezone_cta_state,
@@ -60,11 +134,13 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
 
     from utils.standings_divisions import resolve_divisions, division_records
     _div_info = resolve_divisions(ctx)
+    _owner_to_rid = _owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly)
+    _div_records = division_records(df_weekly, (_div_info or {}).get("by_rid") or {})
     standings_html = render_standings_compact(
         team_stats, movement=_standings_movement(df_weekly),
-        owner_to_rid=_owner_to_rid_map(roster_map=ctx.get("roster_map"), df_weekly=df_weekly),
+        owner_to_rid=_owner_to_rid,
         divisions=_div_info,
-        div_records=division_records(df_weekly, (_div_info or {}).get("by_rid") or {}),
+        div_records=_div_records,
     )
     usage_movers_html = _render_usage_movers(ctx, viewer_roster_id)
     usage_fallers_html = _render_usage_fallers(ctx, viewer_roster_id)
@@ -234,10 +310,24 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
         _vmask = (_hs["owner"].astype(str) == _vname) if _vname else None
         if _vname and _vmask is not None and bool(_vmask.any()):
             _vrow = _hs[_vmask].iloc[0]
-            _rec = f"{int(_vrow['Wins'])}-{int(_vrow['Losses'])}"
-            if int(_vrow.get("Ties", 0) or 0):
-                _rec += f"-{int(_vrow['Ties'])}"
-            _hero_cards.append(("Your record", _rec, _dash_ord(int(_vrow['Rank']))))
+            # Record + rank respect divisions, matching the standings rail:
+            # "8-2 (5-0)" and the playoff seed (division winners first).
+            # Fall back to the plain record / overall rank if the mapping
+            # needed for the seed math is unavailable.
+            _hero_rs = hero_record_and_seed(
+                _hs.to_dict("records"), _vname,
+                owner_to_rid=_owner_to_rid,
+                by_rid=(_div_info or {}).get("by_rid") or {},
+                div_records=_div_records,
+            )
+            if _hero_rs:
+                _rec, _rank = _hero_rs
+            else:
+                _rec = f"{int(_vrow['Wins'])}-{int(_vrow['Losses'])}"
+                if int(_vrow.get("Ties", 0) or 0):
+                    _rec += f"-{int(_vrow['Ties'])}"
+                _rank = int(_vrow['Rank'])
+            _hero_cards.append(("Your record", _rec, _dash_ord(_rank)))
             _pf = _hs.sort_values("PF", ascending=False).reset_index(drop=True)
             _pf_rank = int(_pf.index[_pf["owner"].astype(str) == _vname][0]) + 1
             _hero_cards.append(("Points for", f"{float(_vrow['PF']):.0f}", _dash_ord(_pf_rank)))

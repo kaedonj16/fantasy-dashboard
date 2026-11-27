@@ -6,6 +6,12 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-11-26",
+        "tag": "update",
+        "text": "The record at the top of your league dashboard now respects divisions like the standings do: it shows your division record too, and the rank under it is your standings seed, with division winners ahead of wild cards.",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-11-26",
         "tag": "fix",
         "text": "Fixed ScoreZone's new field on the live site: it now actually angles back into the distance as designed, and the goal posts sit small behind each end zone instead of hanging over them.",
         "link": "/scorezone"
