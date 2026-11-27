@@ -758,6 +758,35 @@ def build_weekly_hub_body(ctx: dict, generic: bool = False) -> str:
   // the scroll position is restored when the refresh completes. A
   // soft-nav-detached selector drops the registration instead of
   // refreshing a dead page.
+  // Direct (non-generic) builds bake the Scout / Lineup panels into
+  // the page instead of lazy-filling them, so no lazy-tab refill
+  // exists to call: refill both panels from the same tab endpoint the
+  // generic script uses, swapping only their own hosts.
+  window.__hubRefillBakedTabs = function() {{
+    [['scout', document.querySelector('.tab-panel[data-tab="scout"]')],
+     ['optimal', document.getElementById('optimalLineupContent')]].forEach(function(pair) {{
+      var tab = pair[0], host = pair[1];
+      if (!host) return;
+      var tries = 0;
+      function attempt() {{
+        fetch('/api/weekly-tab?platform=' + encodeURIComponent(platform) +
+          '&season=' + encodeURIComponent(season) +
+          '&league_id=' + encodeURIComponent(leagueId) + '&tab=' + tab)
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d && d.ready) {{
+              host.innerHTML = d.html || '';
+              if (window.initPageRoot) window.initPageRoot(host);
+              return;
+            }}
+            if (tries++ < 8) setTimeout(attempt, 2000);
+          }})
+          .catch(function() {{ if (tries++ < 8) setTimeout(attempt, 3000); }});
+      }}
+      attempt();
+    }});
+  }};
+
   window.brPageRefresh = function() {{
     if (sel.isConnected === false) {{
       delete window.brPageRefresh;
@@ -781,6 +810,13 @@ def build_weekly_hub_body(ctx: dict, generic: bool = False) -> str:
           try {{ window.scrollTo(0, y); }} catch (e) {{}}
           if (document.documentElement) document.documentElement.scrollTop = y;
           if (document.body) document.body.scrollTop = y;
+          // The week payload does not cover the Scout / Lineup tabs:
+          // refill them from /api/weekly-tab as part of the same
+          // refresh (the lazy-tab refill on generic bodies, the baked
+          // panel refill on direct builds; both ready-poll in the
+          // background, as on first fill).
+          if (window.__hubRefillLazyTabs) window.__hubRefillLazyTabs();
+          else if (window.__hubRefillBakedTabs) window.__hubRefillBakedTabs();
           resolve();
         }}
       }}, 100);
@@ -1109,8 +1145,8 @@ def _hub_generic_script(platform, season, league_id) -> str:
     }}
   }}
   var loaded = {{}};
-  function fillTab(tab) {{
-    if (loaded[tab]) return;
+  function fillTab(tab, force) {{
+    if (loaded[tab] && !force) return;
     loaded[tab] = true;
     var slot = document.querySelector('[data-hub-lazy-tab="' + tab + '"]');
     if (!slot) return;
@@ -1138,6 +1174,15 @@ def _hub_generic_script(platform, season, league_id) -> str:
     var tab = btn.getAttribute('data-tab');
     if (tab === 'scout' || tab === 'optimal') fillTab(tab);
   }});
+  // Refresh entry point for the hub's own brPageRefresh: refill any
+  // lazy tab that was filled this visit (never-filled tabs keep their
+  // first-click fill). The attempt loop polls the tab endpoint until
+  // it reports ready, exactly as the first fill does.
+  window.__hubRefillLazyTabs = function() {{
+    ['scout', 'optimal'].forEach(function(t) {{
+      if (loaded[t]) fillTab(t, true);
+    }});
+  }};
 }})();
 </script>"""
 

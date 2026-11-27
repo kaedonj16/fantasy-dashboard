@@ -346,6 +346,20 @@ _JS = """
       },300);
     }).catch(function(){refreshing=false; if(done){done(false);}});
   }
+  // Targeted refresh: the page's own soft refresh swaps only the mode
+  // region and the activity card from a fresh render of this page --
+  // no document fetch of other pages, no reload. A call that lands
+  // while a control action is already refreshing is dropped by
+  // softRefresh and reported as a rejection so the refresh falls back
+  // instead of claiming success.
+  window.brPageRefresh = function(){
+    return new Promise(function(resolve, reject){
+      softRefresh(function(ok){
+        if (ok === false) reject(new Error('autopilot refresh busy'));
+        else resolve();
+      });
+    });
+  };
   // --- Mode segmented control ---------------------------------------------
   // The mode POST only persists the mode (no plan build, no ESPN read),
   // so the switch flips in place instantly: segment, status view, and

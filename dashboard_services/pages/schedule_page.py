@@ -584,6 +584,31 @@ def build_schedule_body(ctx):
 
       fillWeekSelects();
       syncPresetBtns();
+      // Targeted refresh: drop the cached range payloads and re-render
+      // through the page's own loader. View, position, sort and week
+      // range are closure state the render reads, so all of them are
+      // preserved. Settles when the grid leaves its loading state; the
+      // grid's own error state rejects.
+      window.brPageRefresh = function() {
+        mainCache = {};
+        render();
+        return new Promise(function(resolve, reject) {
+          var started = Date.now();
+          var iv = setInterval(function() {
+            var html = gridEl.innerHTML || '';
+            if (html.indexOf('Couldn’t load rankings') !== -1) {
+              clearInterval(iv); reject(new Error('schedule load failed')); return;
+            }
+            if (Date.now() - started > 300 && html.indexOf('Loading rankings') === -1) {
+              clearInterval(iv); resolve(); return;
+            }
+            if (Date.now() - started > 20000) {
+              clearInterval(iv); reject(new Error('schedule load timed out'));
+            }
+          }, 120);
+        });
+      };
+
       render();
     })();
     </script>

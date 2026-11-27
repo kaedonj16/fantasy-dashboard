@@ -2788,7 +2788,7 @@ _DRAFT_HISTORY_HTML = r"""
         + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.');
       return;
     }
-    fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
+    return fetch('/api/draft/detect?history=1&platform=' + encodeURIComponent(cfg.platform)
         + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(resp){
@@ -2812,6 +2812,20 @@ _DRAFT_HISTORY_HTML = r"""
         else listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>';
       });
   }
+
+  // Targeted refresh: the history list is the page's only data, and
+  // its loader is idempotent with no user state to preserve.
+  window.brPageRefresh = function(){
+    if (!listEl || listEl.isConnected === false) {
+      delete window.brPageRefresh;
+      return Promise.resolve();
+    }
+    return Promise.resolve(loadList()).then(function(){
+      if (listEl.textContent.indexOf('Could not load drafts.') !== -1) {
+        throw new Error('draft history load failed');
+      }
+    });
+  };
 
   loadList();
 })();

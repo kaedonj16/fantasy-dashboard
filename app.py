@@ -22749,6 +22749,27 @@ def page_breakouts(platform: str, season: int, league_id: str):
           }});
       }}
 
+      // Targeted refresh: reload only the candidates board for the
+      // week currently selected (the position filter is a render-time
+      // global and is re-applied to the fresh data). Settles when the
+      // loading state clears; the board's own failure message rejects
+      // so the refresh falls back instead of claiming success.
+      window.brPageRefresh = function() {{
+        var sel = document.getElementById('breakoutWeekSelect');
+        loadBreakouts(sel ? sel.value : currentWeek);
+        return new Promise(function(resolve, reject) {{
+          var started = Date.now();
+          var iv = setInterval(function() {{
+            var loadingEl = document.getElementById('breakoutsLoading');
+            var failed = loadingEl && loadingEl.textContent.indexOf('Failed to load breakout') !== -1;
+            if (failed) {{ clearInterval(iv); reject(new Error('breakouts load failed')); return; }}
+            var settled = !loadingEl || loadingEl.style.display === 'none';
+            if (Date.now() - started > 400 && settled) {{ clearInterval(iv); resolve(); return; }}
+            if (Date.now() - started > 20000) {{ clearInterval(iv); reject(new Error('breakouts load timed out')); }}
+          }}, 120);
+        }});
+      }};
+
       function onBreakoutWeekChange() {{
         var sel = document.getElementById('breakoutWeekSelect');
         loadBreakouts(sel ? sel.value : 'latest');

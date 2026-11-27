@@ -13,6 +13,12 @@ CHANGELOG = [
     {
         "date": "2026-11-26",
         "tag": "update",
+        "text": "Refreshing data now opens a popup the moment it starts, so you can see it working, watch it finish, and retry right there if it fails. Refresh is also faster everywhere: each page now reloads just its own data or the sections that changed, instead of rebuilding the whole page.",
+        "link": "/dashboard"
+    },
+    {
+        "date": "2026-11-26",
+        "tag": "update",
         "text": "ScoreZone's live field has a new look: it angles back into the distance with goal posts at each end, and passes now arc through the air to where the play ended.",
         "link": "/scorezone"
     },

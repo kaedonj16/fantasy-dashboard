@@ -2150,6 +2150,21 @@ if (typeof window !== 'undefined') {
             });
     }
 
+    // Targeted refresh: reload the player pool through the board's own
+    // loader (request-id guarded, no-store on refetch). Mode, scoring,
+    // search, sort and pick slot live in this closure and are
+    // preserved; board overrides survive via their own storage sync.
+    window.brPageRefresh = function () {
+        if (!document.getElementById('csBoardBody')) {
+            delete window.brPageRefresh;
+            return Promise.resolve();
+        }
+        var req = loadPlayers();
+        return req.then(function () {
+            if (loadError) throw new Error(loadError);
+        });
+    };
+
     // Schedule rank is supporting draft context, not an input to the VOR order.
     // Fetch the full fantasy regular season once the player pool is known and
     // merge the API's position-specific SoS rank onto every matching row.

@@ -465,17 +465,18 @@ _TOP_MOVERS_SWAP_SCRIPT = """
     if (s && d) d.innerHTML = s.innerHTML;
   }
 
-  function swap(url, push) {
+  function swap(url, push, opts) {
     var pg = page();
     if (!pg || !window.fetch || !window.DOMParser) {
+      if (opts && opts.noNav) return Promise.reject(new Error("top movers swap unavailable"));
       window.location.href = url;
-      return;
+      return Promise.resolve();
     }
     var my = ++seq;
     pg.classList.add("rf-loading");
     var grid = pg.querySelector(".rf-grid");
     if (grid) grid.setAttribute("aria-busy", "true");
-    fetch(url, { credentials: "same-origin" })
+    return fetch(url, { credentials: "same-origin" })
       .then(function (r) {
         if (!r.ok) throw new Error("top movers fetch failed");
         return r.text();
@@ -509,10 +510,27 @@ _TOP_MOVERS_SWAP_SCRIPT = """
         var doneGrid = pg.querySelector(".rf-grid");
         if (doneGrid) doneGrid.removeAttribute("aria-busy");
       })
-      .catch(function () {
-        if (my === seq) window.location.href = url;
+      .catch(function (err) {
+        if (my !== seq) return;
+        pg.classList.remove("rf-loading");
+        var doneGrid = pg.querySelector(".rf-grid");
+        if (doneGrid) doneGrid.removeAttribute("aria-busy");
+        if (opts && opts.noNav) throw err;
+        window.location.href = url;
       });
   }
+
+  // Targeted refresh: re-run the page's own section swap against the
+  // current URL (same copy set as a filter change, without the
+  // navigation fallback -- a failed swap rejects so the refresh can
+  // fall back instead).
+  window.brPageRefresh = function () {
+    if (!page()) {
+      delete window.brPageRefresh;
+      return Promise.resolve();
+    }
+    return swap(window.location.href, false, { noNav: true });
+  };
 
   document.addEventListener("click", function (e) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey ||

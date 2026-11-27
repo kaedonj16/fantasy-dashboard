@@ -340,6 +340,47 @@ async function run() {
     console.log('ok - armed pull + push-back below half = no refresh');
   }
 
+  // 13. No page hook, but the shared targeted section refresh is
+  //     eligible (server-rendered page): the pull runs IT instead.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brSectionRefresh = () => { calls++; return Promise.resolve(); };
+    w.win.brSectionRefreshEligible = () => true;
+    w.pull(plainTarget(), 140);
+    await flush();
+    assert.equal(calls, 1, 'section fallback: section refresh called once');
+    console.log('ok - no page hook + eligible section refresh = pull refreshes sections');
+  }
+
+  // 14. Section refresh present but NOT eligible on this page (e.g.
+  //     Draft Room): no gesture at all, same as having no hook.
+  {
+    const w = makeWorld();
+    let calls = 0;
+    w.win.brSectionRefresh = () => { calls++; return Promise.resolve(); };
+    w.win.brSectionRefreshEligible = () => false;
+    w.pull(plainTarget(), 140);
+    await flush();
+    assert.equal(calls, 0, 'section ineligible: refresh not called');
+    assert.equal(w.indicator(), null, 'section ineligible: indicator never created');
+    console.log('ok - section refresh ineligible = no gesture');
+  }
+
+  // 15. A page hook, when registered, wins over the section fallback.
+  {
+    const w = makeWorld();
+    let hookCalls = 0, sectionCalls = 0;
+    w.win.brPageRefresh = () => { hookCalls++; return Promise.resolve(); };
+    w.win.brSectionRefresh = () => { sectionCalls++; return Promise.resolve(); };
+    w.win.brSectionRefreshEligible = () => true;
+    w.pull(plainTarget(), 140);
+    await flush();
+    assert.equal(hookCalls, 1, 'page hook precedence: hook called once');
+    assert.equal(sectionCalls, 0, 'page hook precedence: section refresh not called');
+    console.log('ok - page hook wins over section fallback');
+  }
+
   console.log('\nALL PULL-TO-REFRESH HARNESS CHECKS PASSED');
 }
 

@@ -7250,6 +7250,102 @@ strong + .player-badge,
     gap: 0;
 }
 
+/* Refresh modal: the centered popup shown at the start of a
+   user-initiated data refresh (Refresh Data button, pull-to-refresh).
+   Navy scrim over the page, one card in the site's modal grammar. */
+.br-refresh-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 25, 42, 0.56);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: var(--z-toast);
+}
+
+.br-refresh-modal-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(10, 25, 42, 0.35);
+    padding: 28px 32px 24px;
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.br-refresh-modal-spinner {
+    border-top-color: var(--spinner);
+    margin: 0 auto 6px;
+    width: 32px;
+    height: 32px;
+}
+
+.br-refresh-modal-check,
+.br-refresh-modal-warn {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 6px;
+    fill: none;
+    stroke: var(--spinner);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.br-refresh-modal-warn {
+    stroke: var(--accent);
+}
+
+.br-refresh-modal-warn-dot {
+    fill: var(--accent);
+    stroke: none;
+}
+
+.br-refresh-modal-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.br-refresh-modal-retry {
+    appearance: none;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.br-refresh-modal-dismiss {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: var(--radius);
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.br-refresh-modal-retry:hover,
+.br-refresh-modal-dismiss:hover {
+    border-color: var(--spinner);
+}
+
 .flo-logo {
     width: 52px;
     height: 52px;

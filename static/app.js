@@ -2046,7 +2046,11 @@ window.brHaptic = function (pattern) {
     document.addEventListener = capture(document, docAdd);
     window.addEventListener = capture(window, winAdd);
     try {
-      container.querySelectorAll('script').forEach(function (old) {
+      // A lone <script> element may be passed directly (the section-swap
+      // path re-runs a single changed script); treat it as its own list.
+      var scripts = container.tagName === 'SCRIPT'
+        ? [container] : container.querySelectorAll('script');
+      scripts.forEach(function (old) {
         var s = document.createElement('script');
         for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
         if (!old.src) s.textContent = old.textContent;
@@ -2423,6 +2427,200 @@ window.brHaptic = function (pattern) {
     } catch (e) {
       return false;
     }
+  };
+
+  // ── Targeted section swap ─────────────────────────────────────────────
+  // The middle tier of a data refresh for server-rendered pages that have
+  // no API loader of their own (Dashboard, Teams, Activity, League Health,
+  // Scout, Awards, Graphs, Draft Recap, the offseason dashboard, ...):
+  // given the freshly fetched document, replace ONLY the sections whose
+  // markup actually changed, in place, and leave everything else -- DOM,
+  // scroll, expanded cards, running page scripts -- exactly as it was.
+  // Unchanged sections are never touched, changed sections are re-inited
+  // through the shared initialisers, and the run never hard-reloads a page
+  // the full-root swap would have rejected for its external scripts.
+  //
+  // Returns { swapped, skipped } when the swap applied (swapped may be 0:
+  // the data did not change, so only the freshness timestamp moves), or
+  // null when the page is not section-swappable -- structural mismatch,
+  // a non-re-runnable external script, an ad-eligibility change, or a
+  // page on the exclusion list -- so the caller can fall back to the
+  // full-root swap / hard reload instead of reporting a false success.
+  //
+  // Regions that must never be section-swapped:
+  // - pages whose content is painted by their own loaders and already
+  //   register a targeted hook (ScoreZone, Breakouts, Advanced Metrics,
+  //   Trade Database): swapping their server shell would wipe the
+  //   painted data back to skeletons;
+  // - the Draft Room (live draft state, timers, polling);
+  // - Weekly Recap bodies still carrying their async fill slots (the
+  //   live slots have been replaced by filled sections the fresh
+  //   document does not have);
+  // - individual load-once JS mounts inside otherwise swappable pages
+  //   (SECTION_SKIP_IDS): their live content was filled by a script
+  //   that runs once at load, so the fresh document's empty mount would
+  //   erase it;
+  // - any region holding the focused element, a dirty form control, a
+  //   canvas, or the client-managed action queue / GM memo result.
+  var SECTION_SKIP_IDS = {
+    sinceLastVisitCard: 1,   // filled by initSinceLastVisit from visit data
+    'os-jump-actions': 1,    // action queue: dismissal state is client-managed
+    btmPanel: 1,             // Teams value panel: teams.js load-once fill
+    sosPanel: 1,             // Teams schedule panel: teams.js load-once fill
+    rosterIntelPanel: 1,     // Teams roster intel: load-once fill
+    nflNewsCard: 1,          // Activity news: load-once /api/nfl-news fill
+    historyAwardsContent: 1, // History: filled by loadHistorySections
+    historyChartContent: 1,  // History: filled by loadHistorySections
+    historyStandingsContent: 1
+  };
+  function sectionSwapBlockedRoot(curRoot) {
+    if (!curRoot) return true;
+    if (curRoot.querySelector('#drSideTabs, #rz-root, #breakoutsContainer, #amCmdBar, #tdbList')) return true;
+    if (curRoot.querySelector('[data-recap-activity-slot], [data-recap-ai-slot], [data-recap-upnext-slot]')) return true;
+    return false;
+  }
+  window.brSectionSwapBlockedRoot = sectionSwapBlockedRoot;
+
+  window.brSwapChangedSections = function (html) {
+    var curRoot = document.getElementById('page-root');
+    if (!curRoot || !html) return null;
+    if (sectionSwapBlockedRoot(curRoot)) return null;
+    var doc;
+    try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (e) { return null; }
+    var newRoot = doc.getElementById('page-root');
+    if (!newRoot) return null;
+    if (sectionSwapBlockedRoot(newRoot)) return null;
+    // Same league snapshot only; a different league's sections must
+    // never land on this page (the full swap enforces the same rule).
+    var identityKeys = ['platform', 'season', 'leagueId'];
+    for (var k = 0; k < identityKeys.length; k++) {
+      if (String(curRoot.dataset[identityKeys[k]] || '') !== String(newRoot.dataset[identityKeys[k]] || '')) return null;
+    }
+    // Ad eligibility follows applyNewRoot: losing eligibility removes
+    // the containers; gaining it needs a full navigation.
+    var incomingAds = newRoot.dataset.adEligible === 'true';
+    var currentAds = curRoot.dataset.adEligible === 'true';
+    if (incomingAds && !currentAds) return null;
+    // Every external script in the fresh document must be re-runnable,
+    // the same bar applyNewRoot sets: a swapped-in section may carry
+    // one, and a script we cannot re-run means the page needs its full
+    // bootstrap, not a section swap.
+    var ext = newRoot.querySelectorAll('script[src]');
+    for (var i = 0; i < ext.length; i++) {
+      if (!scriptReRunnable(ext[i].getAttribute('src') || '')) return null;
+    }
+    function keyOf(el) {
+      return el.tagName + '|' + (el.id || '') + '|' + (typeof el.className === 'string' ? el.className : '');
+    }
+    function kids(el) {
+      return Array.prototype.filter.call(el.childNodes, function (n) { return n.nodeType === 1; });
+    }
+    // A region is preserved (counted as skipped, never swapped) when it
+    // holds state a markup replacement would destroy.
+    function preserved(el) {
+      if (el.id && SECTION_SKIP_IDS[el.id]) return true;
+      if (el.querySelector) {
+        for (var sid in SECTION_SKIP_IDS) {
+          if (el.querySelector('#' + sid)) return true;
+        }
+        if (el.querySelector('[data-slv-init], canvas')) return true;
+        var gm = el.querySelector('#gm-memo-result');
+        if (gm && gm.children.length) return true;
+      }
+      var active = document.activeElement;
+      if (active && el.contains && el.contains(active)) return true;
+      var fields = el.querySelectorAll ? el.querySelectorAll('input, textarea, select') : [];
+      for (var f = 0; f < fields.length; f++) {
+        var fld = fields[f];
+        if (fld.type === 'checkbox' || fld.type === 'radio') {
+          if (fld.checked !== fld.defaultChecked) return true;
+        } else if (fld.tagName === 'SELECT') {
+          var opts = fld.options || [];
+          for (var o = 0; o < opts.length; o++) {
+            if (opts[o].selected !== opts[o].defaultSelected) return true;
+          }
+        } else if (fld.value !== fld.defaultValue) return true;
+      }
+      return false;
+    }
+    var stats = { swapped: 0, skipped: 0 };
+    function swapUnit(cur, next) {
+      if (cur.tagName === 'SCRIPT') {
+        // A changed standalone script (e.g. Graphs' embedded figure
+        // payloads): load the new code into the live element and re-run
+        // it through the same bridge the full swap uses.
+        for (var a = 0; a < next.attributes.length; a++) cur.setAttribute(next.attributes[a].name, next.attributes[a].value);
+        if (!next.src) cur.textContent = next.textContent;
+        reexecScripts(cur);
+        stats.swapped++;
+        return;
+      }
+      var imported = document.importNode(next, true);
+      cur.replaceWith(imported);
+      reexecScripts(imported);
+      if (window.initPageRoot) window.initPageRoot(imported);
+      if (window.brInitMoments) window.brInitMoments(imported);
+      stats.swapped++;
+    }
+    function walk(cur, next) {
+      if (cur.outerHTML === next.outerHTML) return;
+      if (preserved(cur)) { stats.skipped++; return; }
+      var cc = kids(cur), nc = kids(next);
+      var aligned = cc.length > 0 && cc.length === nc.length;
+      if (aligned) {
+        for (var j = 0; j < cc.length; j++) {
+          if (keyOf(cc[j]) !== keyOf(nc[j])) { aligned = false; break; }
+        }
+      }
+      if (aligned) {
+        // Aligned children can still hide a change in this node's own
+        // text (a heading, a sub-line): compare direct text before
+        // recursing, or the swap would report success over stale text.
+        var ownText = function (el) {
+          var t = '';
+          for (var n = 0; n < el.childNodes.length; n++) {
+            if (el.childNodes[n].nodeType === 3) t += el.childNodes[n].nodeValue;
+          }
+          return t;
+        };
+        if (ownText(cur) !== ownText(next)) { swapUnit(cur, next); return; }
+        // Attribute-only changes (data-* state, hrefs, inline styles)
+        // are changes too; identical children must not mask them.
+        var attrSig = function (el) {
+          var parts = [];
+          for (var at = 0; at < el.attributes.length; at++) {
+            parts.push(el.attributes[at].name + '=' + el.attributes[at].value);
+          }
+          return parts.sort().join('&');
+        };
+        if (attrSig(cur) !== attrSig(next)) { swapUnit(cur, next); return; }
+        for (var m = 0; m < cc.length; m++) walk(cc[m], nc[m]);
+        return;
+      }
+      swapUnit(cur, next);
+    }
+    // The root's own children must line up structurally; added/removed
+    // top-level blocks mean the page changed shape, which is the full
+    // swap's job, not this tier's.
+    var curKids = kids(curRoot), newKids = kids(newRoot);
+    if (curKids.length !== newKids.length) return null;
+    for (var r = 0; r < curKids.length; r++) {
+      if (keyOf(curKids[r]) !== keyOf(newKids[r])) return null;
+    }
+    try {
+      for (var s = 0; s < curKids.length; s++) walk(curKids[s], newKids[s]);
+    } catch (e) {
+      return null;
+    }
+    if (!incomingAds && currentAds) {
+      document.querySelectorAll('.ad-container').forEach(function (el) { el.remove(); });
+      document.querySelectorAll('ins.adsbygoogle').forEach(function (el) { el.remove(); });
+    }
+    if (newRoot.dataset.cacheTs != null) curRoot.dataset.cacheTs = newRoot.dataset.cacheTs;
+    if (newRoot.dataset.premium != null) curRoot.dataset.premium = newRoot.dataset.premium;
+    if (newRoot.dataset.adEligible != null) curRoot.dataset.adEligible = newRoot.dataset.adEligible;
+    if (doc.title) document.title = doc.title;
+    return stats;
   };
 
   // Pages that can be swapped in place. A page qualifies when its inline
@@ -4985,9 +5183,75 @@ function showLoginGate(target, opts) {
     if (label) label.textContent = 'Refreshing…';
   }
 
-  function showRefreshOverlay(on) {
+  // ── Refresh modal ─────────────────────────────────────────────────────
+  // The user-initiated refresh popup: a centered card over a navy scrim,
+  // shown the instant a refresh starts. States: refreshing (spinner),
+  // success (check, brief, auto-dismiss) and failure (Couldn't refresh,
+  // with Try again / Dismiss, so a failed refresh never just vanishes).
+  // Background auto-revalidate never touches this: it stays silent.
+  var refreshModalHideTimer = null;
+  var refreshModalRetry = null;
+
+  function clearRefreshModalTimer() {
+    if (refreshModalHideTimer) { clearTimeout(refreshModalHideTimer); refreshModalHideTimer = null; }
+  }
+
+  function setRefreshModalState(state, opts) {
+    opts = opts || {};
+    var el = document.getElementById('brRefreshOverlay');
+    if (!el || typeof el.querySelector !== 'function') return;
+    el.setAttribute('data-state', state);
+    var spinner = el.querySelector('.br-refresh-modal-spinner');
+    if (spinner) spinner.style.display = state === 'refreshing' ? '' : 'none';
+    var check = el.querySelector('.br-refresh-modal-check');
+    if (check) check.style.display = state === 'success' ? '' : 'none';
+    var warn = el.querySelector('.br-refresh-modal-warn');
+    if (warn) warn.style.display = state === 'failure' ? '' : 'none';
+    var title = el.querySelector('.br-refresh-modal-title');
+    if (title) {
+      title.textContent = state === 'success' ? "You're up to date"
+        : state === 'failure' ? "Couldn't refresh"
+        : 'Refreshing data...';
+    }
+    var sub = el.querySelector('.br-refresh-modal-sub');
+    if (sub) {
+      sub.textContent = state === 'success'
+        ? (opts.partial ? 'Some data could not update.' : 'The latest league data is in.')
+        : state === 'failure'
+          ? (opts.rateLimit ? 'Too many requests. Wait a moment, then try again.' : 'Something went wrong. Your current data is still here.')
+          : 'Fetching the latest league data';
+    }
+    var actions = el.querySelector('.br-refresh-modal-actions');
+    if (actions) actions.style.display = state === 'failure' ? '' : 'none';
+  }
+
+  function showRefreshSuccess(partial) {
+    var el = document.getElementById('brRefreshOverlay');
+    if (!el) return;
+    if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
+    setRefreshModalState('success', { partial: !!partial });
+    clearRefreshModalTimer();
+    refreshModalHideTimer = setTimeout(function () {
+      refreshModalHideTimer = null;
+      showRefreshOverlay(false);
+    }, 900);
+  }
+
+  function showRefreshFailure(rateLimit, retryFn) {
+    var el = document.getElementById('brRefreshOverlay');
+    if (!el) { setRefreshFailure(rateLimit ? 'Wait a moment' : undefined); return; }
+    if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
+    refreshModalRetry = typeof retryFn === 'function' ? retryFn : null;
+    el.style.display = 'flex';
+    setRefreshModalState('failure', { rateLimit: !!rateLimit });
+  }
+
+  function showRefreshOverlay(on, opts) {
+    opts = opts || {};
     var el = document.getElementById('brRefreshOverlay');
     if (!on) {
+      clearRefreshModalTimer();
+      refreshModalRetry = null;
       if (el) {
         if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
         el.style.display = 'none';
@@ -4997,16 +5261,48 @@ function showLoginGate(target, opts) {
     if (!el) {
       el = document.createElement('div');
       el.id = 'brRefreshOverlay';
-      el.className = 'fullscreen-loading-overlay';
+      el.className = 'br-refresh-modal-overlay';
       el.setAttribute('role', 'status');
       el.setAttribute('aria-live', 'polite');
       el.innerHTML =
-        '<div class="loading-spinner"></div>' +
-        '<div class="fullscreen-loading-text">Refreshing data…</div>' +
-        '<div class="fullscreen-loading-subtext">Fetching the latest league data</div>';
+        '<div class="br-refresh-modal-card" role="dialog" aria-modal="true" aria-label="Refreshing data">' +
+          '<div class="loading-spinner br-refresh-modal-spinner"></div>' +
+          '<svg class="br-refresh-modal-check" viewBox="0 0 52 52" aria-hidden="true" style="display:none"><circle cx="26" cy="26" r="24"></circle><path d="M15 27l7 7 15-16"></path></svg>' +
+          '<svg class="br-refresh-modal-warn" viewBox="0 0 52 52" aria-hidden="true" style="display:none"><circle cx="26" cy="26" r="24"></circle><path d="M26 15v13"></path><circle class="br-refresh-modal-warn-dot" cx="26" cy="37" r="1.5"></circle></svg>' +
+          '<div class="fullscreen-loading-text br-refresh-modal-title">Refreshing data...</div>' +
+          '<div class="fullscreen-loading-subtext br-refresh-modal-sub">Fetching the latest league data</div>' +
+          '<div class="fullscreen-loading-actions"></div>' +
+          '<div class="br-refresh-modal-actions" style="display:none">' +
+            '<button type="button" class="br-refresh-modal-retry">Try again</button>' +
+            '<button type="button" class="br-refresh-modal-dismiss">Dismiss</button>' +
+          '</div>' +
+        '</div>';
       document.body.appendChild(el);
+      if (typeof el.querySelector === 'function') {
+        var retryBtn = el.querySelector('.br-refresh-modal-retry');
+        if (retryBtn) retryBtn.addEventListener('click', function () {
+          var fn = refreshModalRetry;
+          showRefreshOverlay(false);
+          if (fn) { fn(); return; }
+          // Default retry mirrors the loading-escape path: cancel the
+          // settled run's state first, then start a fresh run.
+          cancelRefresh();
+          doRefresh();
+        });
+        var dismissBtn = el.querySelector('.br-refresh-modal-dismiss');
+        if (dismissBtn) dismissBtn.addEventListener('click', function () {
+          showRefreshOverlay(false);
+        });
+      }
     }
+    clearRefreshModalTimer();
+    refreshModalRetry = null;
     el.style.display = 'flex';
+    setRefreshModalState('refreshing');
+    if (opts.skipEscape) {
+      if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
+      return;
+    }
     if (window.brLoadingEscape) {
       window.brLoadingEscape.disarm(el);
       window.brLoadingEscape.arm(el, {
@@ -5213,6 +5509,8 @@ function showLoginGate(target, opts) {
     var startHref = location.href;
     var acceptedTs = 0;
     var reloadStarted = false;
+    var outcome = null;       // 'success' | 'partial' | 'fail' once settled
+    var failRateLimit = false;
     setRefreshingLabel();
     var btn = document.getElementById('brSheetRefresh');
     if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
@@ -5228,10 +5526,40 @@ function showLoginGate(target, opts) {
           updateLabels(result.refreshedAt);
           var pageLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
           if (pageLabel) pageLabel.textContent = result.partial ? 'Partially updated' : 'Refresh Data';
+          outcome = result.partial ? 'partial' : 'success';
           return;
         }
       }
-      await expireLeague(controller ? controller.signal : undefined);
+      // Targeted refresh: pages that register a pull-to-refresh hook
+      // (Standings, Waivers, Weekly Hub, Rankings, ScoreZone) already own
+      // a verified in-place load for exactly their own data. Expire the
+      // league first (that is the actual data refresh), then run ONLY
+      // that page's load instead of fetching the whole page document,
+      // re-running every page script, or hard-reloading pages that
+      // cannot swap in place. If the targeted load fails, fall through
+      // to the global document path below rather than failing the run.
+      var pageHook = window.brPageRefresh;
+      var leagueExpired = false;
+      if (typeof pageHook === 'function') {
+        try {
+          await expireLeague(controller ? controller.signal : undefined);
+          leagueExpired = true;
+          if (runId !== doRefresh._run) throw new Error('refresh cancelled');
+          await pageHook();
+          if (runId !== doRefresh._run) return;
+          updateLabels();
+          var hookLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+          if (hookLabel) hookLabel.textContent = 'Refresh Data';
+          outcome = 'success';
+          return;
+        } catch (targetErr) {
+          if (runId !== doRefresh._run) throw targetErr;
+          // Targeted load failed: fall through to the global path.
+        }
+      }
+      if (!leagueExpired) {
+        await expireLeague(controller ? controller.signal : undefined);
+      }
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
       var fresh = await fetchFreshDocument(beforeTs, controller ? controller.signal : undefined, startHref);
       if (runId !== doRefresh._run) throw new Error('refresh cancelled');
@@ -5240,12 +5568,28 @@ function showLoginGate(target, opts) {
       // they are reading now; the expire above still warmed the cache.
       if (location.href !== startHref) { updateLabels(); return; }
       acceptedTs = fresh.cacheTs;
-      if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
+      // Targeted section tier: server-rendered pages without their own
+      // loader swap only the sections whose markup changed (see
+      // brSwapChangedSections). A null result means the page is not
+      // section-swappable, so the full-root path below still applies.
+      var sectionRes = null;
+      try {
+        sectionRes = typeof window.brSwapChangedSections === 'function'
+          ? window.brSwapChangedSections(fresh.html) : null;
+      } catch (sectionErr) { sectionRes = null; }
+      if (sectionRes) {
+        if (cacheTs() !== acceptedTs) throw new Error('freshness timestamp was not applied');
+        updateLabels();
+        var sectionLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
+        if (sectionLabel) sectionLabel.textContent = 'Refresh Data';
+        outcome = 'success';
+      } else if (canSwapInPlace() && window.brSwapPageRoot(fresh.html)) {
         // brSwapPageRoot copies the authoritative server build timestamp.
         if (cacheTs() !== acceptedTs) throw new Error('freshness timestamp was not applied');
         updateLabels();
         var refreshedLabel = btn && btn.querySelector && btn.querySelector('span:not(.br-sheet-time)');
         if (refreshedLabel) refreshedLabel.textContent = 'Refresh Data';
+        outcome = 'success';
       } else {
         // The document was proven fresh, but this page cannot safely re-run its
         // scripts in place. Arm the SW and let a native navigation initialise it.
@@ -5258,6 +5602,8 @@ function showLoginGate(target, opts) {
         console.error('Refresh failed:', err);
         var isRateLimit = err && err.message && err.message.indexOf('429') !== -1;
         setRefreshFailure(isRateLimit ? 'Wait a moment' : undefined);
+        outcome = 'fail';
+        failRateLimit = !!isRateLimit;
       }
     } finally {
       if (runId === doRefresh._run && !reloadStarted) {
@@ -5266,12 +5612,96 @@ function showLoginGate(target, opts) {
         clearRefreshWatchdog(runId);
         if (doRefresh._controller === controller) doRefresh._controller = null;
         if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); }
-        showRefreshOverlay(false);
+        // The modal ends the run visibly: a brief success card that
+        // auto-dismisses, or a failure card that stays until the user
+        // picks Try again / Dismiss. Only a run that ended without an
+        // outcome (cancelled, or the user navigated away mid-refresh)
+        // simply hides.
+        if (outcome === 'success') showRefreshSuccess(false);
+        else if (outcome === 'partial') showRefreshSuccess(true);
+        else if (outcome === 'fail') showRefreshFailure(failRateLimit);
+        else showRefreshOverlay(false);
       }
     }
   }
   window.brRefreshLeague = doRefresh;
   window.brCancelRefresh = cancelRefresh;
+  // Shared modal surface for the other user-initiated refresh entry
+  // point, pull-to-refresh: its controller shows the same modal at the
+  // start of a pull refresh and settles it with the hook's promise.
+  // Background auto-revalidate deliberately does NOT use this.
+  window.brRefreshModal = {
+    show: function () { showRefreshOverlay(true, { skipEscape: true }); },
+    succeed: function () { showRefreshSuccess(false); },
+    fail: function (retryFn) { showRefreshFailure(false, retryFn); },
+    hide: function () { showRefreshOverlay(false); }
+  };
+
+  // ── Targeted section refresh (shared surface) ───────────────────────
+  // For pull-to-refresh on server-rendered pages with no page hook of
+  // their own: expire the league, fetch the fresh document, and swap
+  // only the changed sections (brSwapChangedSections). Eligibility is
+  // conservative -- the Draft Room and the loader-owned live surfaces
+  // never take this path -- and a swap that reports itself not
+  // applicable rejects, so the pull settles on the failure card instead
+  // of a false success.
+  function sectionRefreshEligible() {
+    if (location.pathname === '/') return false;
+    var root = document.getElementById('page-root');
+    if (!root) return false;
+    var seg = location.pathname.replace(/\/+$/, '').split('/').pop() || '';
+    if (seg === 'draft') return false;
+    if (typeof window.brSectionSwapBlockedRoot === 'function' && window.brSectionSwapBlockedRoot(root)) return false;
+    return true;
+  }
+  window.brSectionRefreshEligible = sectionRefreshEligible;
+  window.brSectionRefresh = async function () {
+    if (!sectionRefreshEligible()) throw new Error('section refresh not applicable');
+    var beforeTs = cacheTs();
+    var startHref = location.href;
+    await expireLeague(undefined);
+    var fresh = await fetchFreshDocument(beforeTs, undefined, startHref);
+    if (location.href !== startHref) { updateLabels(); return { swapped: 0, skipped: 0 }; }
+    var res = typeof window.brSwapChangedSections === 'function'
+      ? window.brSwapChangedSections(fresh.html) : null;
+    if (!res) throw new Error('section swap not applicable');
+    updateLabels();
+    return res;
+  };
+
+  // Home ("/") has no league to expire and no page hook, but its dynamic
+  // sections -- the signed-in league list and the live-values ticker --
+  // have real loaders of their own (the same pair the resume refresh
+  // uses). Register them as the page hook so Refresh Data and
+  // pull-to-refresh update just those sections instead of hard
+  // reloading the landing page and its connect form.
+  if (location.pathname === '/') {
+    window.brPageRefresh = function () {
+      var jobs = [];
+      if (typeof window.refreshHomeLeagues === 'function') {
+        jobs.push(Promise.resolve().then(function () {
+          return window.refreshHomeLeagues({ force: true });
+        }));
+      }
+      if (typeof window.populateHomeTicker === 'function') {
+        window.__homeTickerHtml = '';
+        var track = document.getElementById('homeTickerTrack');
+        if (track) track.innerHTML = '';
+        try { window.populateHomeTicker(); } catch (e) {}
+        jobs.push(new Promise(function (resolve) {
+          var started = Date.now();
+          var iv = setInterval(function () {
+            var t = document.getElementById('homeTickerTrack');
+            if ((t && t.childElementCount) || Date.now() - started > 3000) {
+              clearInterval(iv);
+              resolve();
+            }
+          }, 120);
+        }));
+      }
+      return Promise.all(jobs);
+    };
+  }
 
   // ── Auto-revalidate on navigation (stale-while-revalidate) ──────────────────
   // When you land on a league page, it paints instantly from the cached snapshot
@@ -10545,6 +10975,32 @@ window.initTradePage = function initTradePage(root = document) {
     if (detail.data) applyRefreshedPlayerPool(detail.data);
   };
   window.addEventListener("br:league-players-refreshed", window.__brTradeLPRefreshHandler);
+
+  // Targeted refresh (Trade Calculator + Trade Hub share this closure):
+  // force the shared league-players fetch past its TTL so it
+  // revalidates; when genuinely new data lands the handler above
+  // rebuilds the pool and swaps the current selections to the live
+  // objects, and the verdict is then recomputed for the trade on
+  // screen. The user's selected players, picks and settings are never
+  // touched. Settles when the revalidation records a fresh timestamp;
+  // a revalidation that never lands rejects so the refresh falls back.
+  window.brPageRefresh = function () {
+    var startedAt = Date.now();
+    __brLeaguePlayersAt = 0;
+    try { brGetLeaguePlayersData(_lpFeedKey || ""); } catch (e) { return Promise.reject(e); }
+    return new Promise(function (resolve, reject) {
+      var iv = setInterval(function () {
+        if (__brLeaguePlayersAt > startedAt) {
+          clearInterval(iv);
+          Promise.resolve().then(function () { return recomputeTrade(); })
+            .then(resolve, resolve);
+        } else if (Date.now() - startedAt > 20000) {
+          clearInterval(iv);
+          reject(new Error("league players revalidation timed out"));
+        }
+      }, 150);
+    });
+  };
 
   function shareTradeToClipboard() {
     const btn = root.querySelector("#shareTradeBtn");
@@ -21851,8 +22307,10 @@ document.addEventListener('DOMContentLoaded', function() {
       // Named so the failure state can re-run the whole load: this fetch
       // fires exactly once at page init, so a transient failure used to
       // strand all three sections on error cards with no retry.
+      let histSectionsFailed = false;
       const loadHistorySections = () => {
-      fetch(`/api/history/${platform}/${season}/${leagueId}/sections?history_season=${historySeason}`)
+      histSectionsFailed = false;
+      return fetch(`/api/history/${platform}/${season}/${leagueId}/sections?history_season=${historySeason}`)
         .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
         .then(data => {
           // Awards section
@@ -21914,6 +22372,7 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         })
         .catch(err => {
+          histSectionsFailed = true;
           console.error('Error loading history sections:', err);
           if (awardsContent) window.brErrorState(awardsContent, 'Error loading season awards.', loadHistorySections, { compact: true });
           if (standingsContent) window.brErrorState(standingsContent, 'Error loading standings.', loadHistorySections, { compact: true });
@@ -21921,6 +22380,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       };
       loadHistorySections();
+      // Targeted refresh: the sections endpoint is this page's own data
+      // load (the server-rendered hero/bracket/rivalries are immutable
+      // season history), so Refresh Data re-runs just it. A failed load
+      // rejects so the refresh falls back instead of claiming success.
+      window.brPageRefresh = () => loadHistorySections()
+        .then(() => { if (histSectionsFailed) throw new Error('history sections failed'); });
     }
   }
 });
@@ -23118,9 +23583,11 @@ if (typeof window !== 'undefined') {
 // Pull-to-refresh (PWA, v1). Touch-only, in-place, and opt-in per page: a
 // page registers window.brPageRefresh() returning a Promise that resolves
 // when its data refresh has completed (ScoreZone and the Weekly Hub do).
-// Pages without a hook get NO gesture and NO reload fallback. The body's
-// overscroll-behavior-y: contain stays, so Android's native pull-to-refresh
-// cannot double-fire underneath this one.
+// Server-rendered pages without a hook of their own fall back to the
+// shared targeted section refresh (window.brSectionRefresh) when it is
+// eligible on this page. Pages with neither get NO gesture and NO reload
+// fallback. The body's overscroll-behavior-y: contain stays, so Android's
+// native pull-to-refresh cannot double-fire underneath this one.
 (function () {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__brPtrInstalled) return;
@@ -23133,6 +23600,16 @@ if (typeof window !== 'undefined') {
   var HIDDEN_Y = -64;      // translateY that parks the chip off-screen
   var PIN_Y = 12;          // translateY while a refresh is running
   var MAX_WAIT_MS = 15000; // the indicator can never strand on a hung hook
+
+  // The refresh this pull runs: the page's own hook when it registered
+  // one, otherwise the shared targeted section refresh when eligible.
+  function ptrHook() {
+    if (typeof window.brPageRefresh === 'function') return window.brPageRefresh;
+    if (typeof window.brSectionRefresh === 'function' &&
+        typeof window.brSectionRefreshEligible === 'function' &&
+        window.brSectionRefreshEligible()) return window.brSectionRefresh;
+    return null;
+  }
 
   var candidate = false;
   var deferredH = false; // candidate started on a horizontal scroller; direction not yet proven
@@ -23248,7 +23725,7 @@ if (typeof window !== 'undefined') {
     decided = false;
     pull = 0;
     if (refreshing) return;
-    if (typeof window.brPageRefresh !== 'function') return; // no hook, no gesture
+    if (!ptrHook()) return; // no hook, no gesture
     if (pageScrollY() > 0) return; // not at the very top
     if (modalOpen()) return;
     if (blockedTarget(e.target)) return;
@@ -23303,10 +23780,20 @@ if (typeof window !== 'undefined') {
     showPull(Math.min(MAX_VISUAL, pull / RESISTANCE));
   }, { passive: false });
 
-  function finishRefresh() {
+  function finishRefresh(ok) {
     if (finishTimer) { clearTimeout(finishTimer); finishTimer = null; }
     refreshing = false;
     retract();
+    // Settle the shared refresh modal the pull opened: success gets the
+    // brief up-to-date card, a rejected hook gets the failure card (its
+    // Try again re-runs this same pull refresh), and a hung hook whose
+    // wait cap fired just closes it. Pages render their own error states
+    // for failures their hook swallows, so a resolved hook is a success.
+    if (window.brRefreshModal) {
+      if (ok === true) window.brRefreshModal.succeed();
+      else if (ok === false) window.brRefreshModal.fail(function () { triggerRefresh(); });
+      else window.brRefreshModal.hide();
+    }
   }
 
   function triggerRefresh() {
@@ -23315,11 +23802,14 @@ if (typeof window !== 'undefined') {
     el.classList.add('br-ptr-visible', 'br-ptr-refreshing');
     el.classList.remove('br-ptr-armed');
     setY(PIN_Y);
+    // A pull is a user-initiated refresh: show the refresh modal at the
+    // start, the same as the Refresh Data button does.
+    if (window.brRefreshModal) window.brRefreshModal.show();
     finishTimer = setTimeout(finishRefresh, MAX_WAIT_MS);
     var p;
-    try { p = window.brPageRefresh(); } catch (err) { finishRefresh(); return; }
-    if (p && typeof p.then === 'function') p.then(finishRefresh, finishRefresh);
-    else finishRefresh();
+    try { p = ptrHook()(); } catch (err) { finishRefresh(false); return; }
+    if (p && typeof p.then === 'function') p.then(function () { finishRefresh(true); }, function () { finishRefresh(false); });
+    else finishRefresh(true);
   }
 
   document.addEventListener('touchend', function () {
@@ -23328,7 +23818,7 @@ if (typeof window !== 'undefined') {
     deferredH = false;
     decided = false;
     if (refreshing) return;
-    if (pull >= THRESHOLD && typeof window.brPageRefresh === 'function') triggerRefresh();
+    if (pull >= THRESHOLD && ptrHook()) triggerRefresh();
     else retract();
     pull = 0;
   }, { passive: true });
@@ -26222,6 +26712,42 @@ function initComparePage() {
       }).catch(() => {});
     }
   } catch (_) {}
+
+  // Targeted refresh: with a comparison on screen, refetch the chosen
+  // players' details and re-render through the same path a picker
+  // selection uses -- the selections themselves (this closure's
+  // `chosen`) are the page's state and are never reset. With nothing
+  // chosen there is no user-built data to refresh, so the hook simply
+  // resolves. A failed refetch paints the result's own error state,
+  // which the hook reports as a rejection.
+  window.brPageRefresh = function () {
+    if (!chosen[1] || !chosen[2] || !resultEl) return Promise.resolve();
+    var before = resultEl.innerHTML;
+    _maybeCompare();
+    return new Promise(function (resolve, reject) {
+      var started = Date.now();
+      var changes = 0, lastHtml = before, stableSince = Date.now();
+      var iv = setInterval(function () {
+        var html = resultEl.innerHTML;
+        if (html.indexOf('Could not load one of the players') !== -1) {
+          clearInterval(iv);
+          reject(new Error('compare reload failed'));
+          return;
+        }
+        if (html !== lastHtml) { changes++; lastHtml = html; stableSince = Date.now(); }
+        // _maybeCompare paints a skeleton, then the real view: two
+        // changes mean the data landed. One change that then stays
+        // stable means the whole cycle finished between polls.
+        if (changes >= 2 || (changes >= 1 && Date.now() - stableSince > 2500)) {
+          clearInterval(iv);
+          resolve();
+        } else if (Date.now() - started > 15000) {
+          clearInterval(iv);
+          reject(new Error('compare reload timed out'));
+        }
+      }, 150);
+    });
+  };
 }
 _deferInit(function () {
   if (document.querySelector('[data-page="compare"]')) initComparePage();
