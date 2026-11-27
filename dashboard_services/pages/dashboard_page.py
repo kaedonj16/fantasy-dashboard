@@ -1563,6 +1563,34 @@ def build_dashboard_body(ctx: dict, defer_injury: bool = False) -> str:
         }}, 1000);
       }}
 
+      // Jump to chips scroll in place only: a plain anchor tap changes
+      // the URL hash, pushes a history entry, and the navigation
+      // handling answers that with a page reload / re-render. Intercept
+      // the tap, leave the URL and history untouched, and scroll the
+      // section into view; its scroll-margin-top clears the sticky top
+      // chrome plus this bar. The anchors and their hrefs stay, so
+      // pruning, the injury badge, and scrollspy keep reading them the
+      // same way, and a chip still works as a link without this script.
+      if (nav) {{
+        nav.addEventListener("click", function(e) {{
+          var chip = e.target.closest
+            ? e.target.closest(".dash-jump-chip") : null;
+          if (!chip) return;
+          e.preventDefault();
+          var id = (chip.getAttribute("href") || "").slice(1);
+          var target = id ? document.getElementById(id) : null;
+          if (!target) return;
+          var reduce = window.matchMedia(
+            "(prefers-reduced-motion: reduce)").matches;
+          target.scrollIntoView({{
+            behavior: reduce ? "auto" : "smooth", block: "start" }});
+          var chips = nav.querySelectorAll(".dash-jump-chip");
+          for (var k = 0; k < chips.length; k++) {{
+            chips[k].classList.toggle("active", chips[k] === chip);
+          }}
+        }});
+      }}
+
       // Scrollspy: the chip for the section nearest the top of the
       // viewport (under the sticky chrome) is the active one.
       if (nav) {{
