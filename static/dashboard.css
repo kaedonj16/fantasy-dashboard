@@ -45050,11 +45050,17 @@ a.rz-demo-link:hover {
    trail of uniform play dots ending at a solid ball. Static by design -- no
    animation. The yard-number row reuses .rz-field-scale. */
 .rz-fb { margin-top: 10px; }
-.rz-fb-persp { perspective: 620px; }
 /* Trapezoid stage: the plane lays back at 49deg so its far edge recedes
    and narrows; the stage's side gutters hold the goal posts OUTSIDE the
-   plane, and its top padding holds their uprights above the far edge. */
-.rz-fb-stage { position: relative; padding-top: 20px; }
+   plane, and its top padding holds their uprights above the far edge.
+   The perspective MUST live on .rz-fb-stage, the plane's direct parent:
+   CSS perspective only affects an element's children, so when it sat on
+   the .rz-fb-persp grandparent (with a flat, non-preserve-3d stage in
+   between) the plane got a plain orthographic rotateX in prod -- a flat
+   rectangle with vertical sides, no trapezoid at all (Kaedon's live
+   screenshot, 2026-11-26). The isolated-snippet QA missed it because it
+   measured the foreshortened height and never the corner quads. */
+.rz-fb-stage { position: relative; padding-top: 20px; perspective: 620px; }
 .rz-fb-field {
     position: relative;
     height: 74px;
@@ -45071,20 +45077,24 @@ a.rz-demo-link:hover {
 }
 /* Goal posts: one clean gold shape (two uprights, a shallow U, a single
    stem ending in a round cap -- no foot, no pad). Anchored to the
-   PROJECTED trapezoid, not the layout box: at the field's vertical
-   centre the rotateX projection pulls the end zone's back line ~2.2% of
-   the field width in from the layout edge, so each stem tip lands on
-   that projected back-line midpoint (left/right: half the gutter plus
-   that 2.2%), vertically centred on the end zone (stem tip at the
-   plane's projected centre height). The posts render in a layer above
-   the plane (z-index 6) so the plane's slanted edge can never clip
-   them, and the 22px gutter plus the % anchor keep the outer upright
-   clear of the card edge at phone and desktop widths. One rule set for
+   PROJECTED trapezoid, not the layout box, and verified against the
+   rendered corner quads at phone and desktop widths: with the 620px
+   perspective actually reaching the plane, its slanted back edge pulls
+   in from the layout edge by ~4.1% of the field width at the top corner
+   and 0 at the bottom corner (the transform origin), so the back line's
+   midpoint sits ~2.1% of the field width in from the 22px gutter edge.
+   left/right therefore centre the post (translateX centring, so the
+   value IS the stem x) on that midpoint, and top puts the stem tip --
+   the path's y=56 of 60 -- exactly on it, at the end zone's projected
+   vertical centre. The post body stands outside the turf, the uprights
+   rise just above the far edge, and the stem never crosses the end-zone
+   lettering. The posts render in a layer above the plane (z-index 6)
+   so the plane's slanted edge can never clip them. One rule set for
    every width (the geometry is %-based), so no media query can lose a
    specificity fight and leave the pair asymmetric. */
-.rz-fb-post { position: absolute; top: 25px; width: 24px; height: 45px; z-index: 6; pointer-events: none; }
-.rz-fb-post-l { left: calc(9px + 2.2%); }
-.rz-fb-post-r { right: calc(9px + 2.2%); }
+.rz-fb-post { position: absolute; top: 34px; width: 20px; height: 38px; z-index: 6; pointer-events: none; }
+.rz-fb-post-l { left: calc(21px + 2.1%); transform: translateX(-50%); }
+.rz-fb-post-r { right: calc(21px + 2.1%); transform: translateX(50%); }
 /* The yard scale under the board aligns to the inset plane, not the
    board's full width. */
 .rz-fb > .rz-field-scale { margin-left: 22px; margin-right: 22px; }

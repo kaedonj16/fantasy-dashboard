@@ -569,6 +569,13 @@ def test_field_board_is_scorezone_only_and_falls_back_to_the_bar():
     # lift off the plane as dotted arcs, and the scale drops its 40s.
     assert "rotateX(49deg)" in DASHBOARD_CSS
     assert "perspective: 620px" in DASHBOARD_CSS
+    # The perspective must sit on .rz-fb-stage, the plane's direct parent:
+    # CSS perspective only affects children, so on the .rz-fb-persp
+    # grandparent it never reaches the plane and prod renders a flat
+    # rectangle with the post stems inside the end zones (live bug,
+    # 2026-11-26). Pin the rule it lives in, not just the string.
+    stage_rule = DASHBOARD_CSS.split(".rz-fb-stage {", 1)[1].split("}", 1)[0]
+    assert "perspective: 620px" in stage_rule
     assert ".rz-fb-post {" in DASHBOARD_CSS and ".rz-fb-arcdot {" in DASHBOARD_CSS
     assert "rz-fb-post-l" in app_js and "rz-fb-post-l" in SCOREZONE_JS
     assert "rz-fb-arcdot" in app_js and "rz-fb-arcdot" in SCOREZONE_JS
