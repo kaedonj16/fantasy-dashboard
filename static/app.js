@@ -5192,6 +5192,45 @@ function showLoginGate(target, opts) {
   var refreshModalHideTimer = null;
   var refreshModalRetry = null;
 
+  // ── Status bar chrome while the modal is open ─────────────────────
+  // The overlay's backdrop blur covers the web viewport only; the iOS
+  // status bar strip is OS chrome painted from the theme-color meta
+  // (#f8fafc in light mode), so it stayed bright white over the navy
+  // scrim. While the modal is up, point theme-color at the scrim's
+  // solid navy (#0a192a, the rgb of rgba(10, 25, 42, 0.56)) and use
+  // the status-bar style syncThemeColor uses for dark mode ('black':
+  // light icons on an opaque dark bar), so the strip reads as one
+  // surface with the darkened page. The pre-modal values are saved on
+  // window.__brRefreshChrome: syncThemeColor checks that slot while
+  // the modal is open and updates the SAVED values instead of the
+  // live metas, so a theme toggle mid-modal is what gets restored on
+  // dismiss. Every modal exit funnels through showRefreshOverlay(false),
+  // which restores the chrome.
+  var REFRESH_MODAL_CHROME_COLOR = '#0a192a';
+
+  function applyRefreshModalChrome() {
+    if (window.__brRefreshChrome) return; // repeat/nested show: keep the true originals
+    var themeMeta = document.getElementById('br-theme-color');
+    var statusMeta = document.getElementById('br-status-bar-style');
+    if (!themeMeta && !statusMeta) return;
+    window.__brRefreshChrome = {
+      theme: themeMeta ? themeMeta.getAttribute('content') : null,
+      status: statusMeta ? statusMeta.getAttribute('content') : null
+    };
+    if (themeMeta) themeMeta.setAttribute('content', REFRESH_MODAL_CHROME_COLOR);
+    if (statusMeta) statusMeta.setAttribute('content', 'black');
+  }
+
+  function restoreRefreshModalChrome() {
+    var saved = window.__brRefreshChrome;
+    if (!saved) return;
+    window.__brRefreshChrome = null;
+    var themeMeta = document.getElementById('br-theme-color');
+    var statusMeta = document.getElementById('br-status-bar-style');
+    if (themeMeta && saved.theme != null) themeMeta.setAttribute('content', saved.theme);
+    if (statusMeta && saved.status != null) statusMeta.setAttribute('content', saved.status);
+  }
+
   function clearRefreshModalTimer() {
     if (refreshModalHideTimer) { clearTimeout(refreshModalHideTimer); refreshModalHideTimer = null; }
   }
@@ -5242,6 +5281,7 @@ function showLoginGate(target, opts) {
     if (!el) { setRefreshFailure(rateLimit ? 'Wait a moment' : undefined); return; }
     if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
     refreshModalRetry = typeof retryFn === 'function' ? retryFn : null;
+    applyRefreshModalChrome();
     el.style.display = 'flex';
     setRefreshModalState('failure', { rateLimit: !!rateLimit });
   }
@@ -5252,6 +5292,7 @@ function showLoginGate(target, opts) {
     if (!on) {
       clearRefreshModalTimer();
       refreshModalRetry = null;
+      restoreRefreshModalChrome();
       if (el) {
         if (window.brLoadingEscape) window.brLoadingEscape.disarm(el);
         el.style.display = 'none';
@@ -5297,6 +5338,7 @@ function showLoginGate(target, opts) {
     }
     clearRefreshModalTimer();
     refreshModalRetry = null;
+    applyRefreshModalChrome();
     el.style.display = 'flex';
     setRefreshModalState('refreshing');
     if (opts.skipEscape) {
@@ -7387,12 +7429,23 @@ function bindOnce(el, key, type, handler, options) {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     // Match the top chrome / PWA splash (navy in dark, soft slate in light)
     // so the OS status bar doesn't flash pure white against the app surface.
-    m.setAttribute('content', dark ? '#020617' : '#f8fafc');
-    const status = document.getElementById('br-status-bar-style');
+    const themeColor = dark ? '#020617' : '#f8fafc';
     // Unlike black-translucent, `black` is opaque. It keeps light status icons
     // readable in dark standalone mode without allowing page content to frost
     // the header; light mode uses adaptive/default dark icons.
-    if (status) status.setAttribute('content', dark ? 'black' : 'default');
+    const statusStyle = dark ? 'black' : 'default';
+    // While the refresh modal is open it owns the OS chrome (scrim navy
+    // with light icons, saved in window.__brRefreshChrome). A theme
+    // change then updates the values the modal restores on dismiss
+    // instead of repainting the status strip mid-modal.
+    if (window.__brRefreshChrome) {
+      window.__brRefreshChrome.theme = themeColor;
+      window.__brRefreshChrome.status = statusStyle;
+      return;
+    }
+    m.setAttribute('content', themeColor);
+    const status = document.getElementById('br-status-bar-style');
+    if (status) status.setAttribute('content', statusStyle);
   }
   syncThemeColor();
 

@@ -439,3 +439,102 @@ window.brPageRefresh = function(){ return Promise.reject(new Error('hook failed'
             fh.write(harness)
         res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
     assert res.returncode == 0, res.stderr or res.stdout
+
+
+# ── Status bar chrome while the modal is open ────────────────────────────────
+def test_refresh_modal_owns_status_bar_chrome_while_open():
+    src = _freshness_iife()
+    # Scrim navy: the solid rgb of the overlay's rgba(10, 25, 42, 0.56).
+    assert "REFRESH_MODAL_CHROME_COLOR = '#0a192a'" in src
+    assert "function applyRefreshModalChrome()" in src
+    assert "function restoreRefreshModalChrome()" in src
+    assert "window.__brRefreshChrome" in src
+    show = src[src.index("function showRefreshOverlay"):src.index("function ackBypassCache")]
+    # Shown: chrome applied. Hidden (the funnel for success auto-dismiss,
+    # Dismiss, cancel and hide()): chrome restored.
+    assert "applyRefreshModalChrome();" in show
+    assert "restoreRefreshModalChrome();" in show
+    # The failure state keeps the modal up, so it re-applies the chrome.
+    fail = src[src.index("function showRefreshFailure"):src.index("function showRefreshOverlay")]
+    assert "applyRefreshModalChrome();" in fail
+
+
+def test_sync_theme_color_defers_to_refresh_modal_chrome():
+    start = APP_JS.index("function syncThemeColor()")
+    sync = APP_JS[start:APP_JS.index("\n  syncThemeColor();", start)]
+    # A theme toggle while the modal is open updates the saved restore
+    # values instead of repainting the status strip mid-modal.
+    assert "window.__brRefreshChrome" in sync
+    assert "__brRefreshChrome.theme = themeColor" in sync
+    assert "__brRefreshChrome.status = statusStyle" in sync
+
+
+@pytest.mark.skipif(os.environ.get("SKIP_NODE") == "1", reason="node skipped")
+def test_refresh_modal_status_bar_chrome_show_and_restore_node():
+    if shutil.which("node") is None:
+        pytest.skip("Node.js not available")
+    src = _freshness_iife()
+    harness = r"""
+var window = globalThis;
+var location = { href: 'http://x/sleeper/2026/abc/dashboard', pathname: '/sleeper/2026/abc/dashboard', reload: function(){} };
+window.location = location;
+var navigator = { serviceWorker: null };
+function meta(content){ return { _c: content, getAttribute: function(){ return this._c; }, setAttribute: function(n, v){ this._c = v; } }; }
+var themeMeta = meta('#f8fafc');
+var statusMeta = meta('default');
+var root = { dataset: { cacheTs: '1000' }, querySelectorAll: function(){ return []; } };
+var sheetTime = { textContent: '', classList: { toggle: function(){} } };
+var button = { disabled: false, _brWired: false, setAttribute: function(){}, removeAttribute: function(){}, addEventListener: function(){} };
+var elements = { 'page-root': root, 'brSheetRefreshTime': sheetTime, 'brSheetRefresh': button,
+  'br-theme-color': themeMeta, 'br-status-bar-style': statusMeta };
+var document = {
+  visibilityState: 'visible',
+  getElementById: function(id){ return elements[id] || null; },
+  querySelector: function(){ return null; },
+  addEventListener: function(){},
+  createElement: function(){ return { style: {}, setAttribute: function(){}, innerHTML: '' }; },
+  body: { appendChild: function(el){ elements[el.id] = el; } }
+};
+window.matchMedia = function(){ return { matches: true }; };
+var setInterval = function(){ return 0; };
+var realSetTimeout = globalThis.setTimeout;
+""" + src + r"""
+function wait(ms){ return new Promise(function(resolve){ realSetTimeout(resolve, ms); }); }
+(async function(){
+  var M = window.brRefreshModal;
+  // Show: the OS chrome switches to the scrim navy with light icons.
+  M.show();
+  if (themeMeta._c !== '#0a192a' || statusMeta._c !== 'black') process.exit(2);
+  // A repeat show must not overwrite the saved originals with the scrim.
+  M.show();
+  M.hide();
+  if (themeMeta._c !== '#f8fafc' || statusMeta._c !== 'default') process.exit(3);
+  // Theme toggle mid-modal: syncThemeColor writes the new theme into
+  // the saved slot, and dismiss restores the NEW theme, not the old.
+  M.show();
+  window.__brRefreshChrome.theme = '#020617';
+  window.__brRefreshChrome.status = 'black';
+  M.hide();
+  if (themeMeta._c !== '#020617' || statusMeta._c !== 'black') process.exit(4);
+  themeMeta._c = '#f8fafc'; statusMeta._c = 'default';
+  // Failure keeps the modal (and its chrome) up until Dismiss/hide.
+  M.show();
+  M.fail(function(){});
+  if (themeMeta._c !== '#0a192a' || statusMeta._c !== 'black') process.exit(5);
+  M.hide();
+  if (themeMeta._c !== '#f8fafc' || statusMeta._c !== 'default') process.exit(6);
+  // Success auto-dismiss restores the chrome too.
+  M.show();
+  M.succeed();
+  if (themeMeta._c !== '#0a192a') process.exit(7);
+  await wait(1100);
+  if (themeMeta._c !== '#f8fafc' || statusMeta._c !== 'default') process.exit(8);
+  process.exit(0);
+})().catch(function(e){ console.error(e); process.exit(9); });
+"""
+    with tempfile.TemporaryDirectory() as td:
+        fp = os.path.join(td, "refresh_modal_chrome.js")
+        with open(fp, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        res = subprocess.run(["node", fp], capture_output=True, text=True, timeout=8)
+    assert res.returncode == 0, res.stderr or res.stdout
