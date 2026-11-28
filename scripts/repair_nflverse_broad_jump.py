@@ -38,6 +38,11 @@ import os
 import sys
 
 _GUARD = "broad_jump_in >= 200 AND (broad_jump_in % 100) <= 11"
+# psycopg3 parses % as a placeholder marker in parameterized
+# statements, so the UPDATE (the only parameterized statement
+# here) needs the guard's modulo escaped as %%. The census
+# SELECT takes no parameters and uses _GUARD verbatim.
+_GUARD_PARAMS = _GUARD.replace("%", "%%")
 
 
 def _decode(v: float) -> float:
@@ -78,7 +83,7 @@ def main() -> int:
             cur = conn.execute(
                 f"""UPDATE rookie_prospect_athleticism
                     SET broad_jump_in = %s, updated_at = NOW()
-                    WHERE player_id = %s AND {_GUARD}""",
+                    WHERE player_id = %s AND {_GUARD_PARAMS}""",
                 (_decode(v), pid))
             fixed += cur.rowcount or 0
         conn.commit()
