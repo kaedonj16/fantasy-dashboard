@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-11-27",
+        "tag": "update",
+        "text": "Prospect scouting notes are sharper: the five notes on each prospect card are now the most distinctive things about him, with the real numbers behind them, correct slot and inline usage labels, and context when a split room or a short season held the raw totals down.",
+        "link": "/prospects"
+    },
+    {
         "date": "2026-11-26",
         "tag": "fix",
         "text": "ScoreZone's field now matches its intended design: a deeper trapezoid shape, goal posts standing clear behind each end zone, cleaner field and end-zone colors in dark mode, and a selected game pill you can actually read in dark mode.",
