@@ -86,7 +86,7 @@ def _qb_prospect(athleticism):
 
 class TestVersion:
     def test_model_version_is_33(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
 
 
 class TestKnotPricing:
@@ -268,7 +268,10 @@ class TestF2EfficiencyAnchor:
         # entirely (it is priced in production/utilization/breakout).
         # The leg is now yards per reception alone and share-invariant:
         # scale(17.0, 8.5, 19.5) = 77.27 at any share.
-        assert self._eff(0.30) == pytest.approx(77.27, abs=0.1)
+        # 3.14 re-pin: the WR leg carries the per-season
+        # competition toll at the latest season (conference-
+        # less fixture, default level): 77.27 x 0.9143 = 70.65.
+        assert self._eff(0.30) == pytest.approx(70.65, abs=0.1)
         assert self._eff(0.30) == self._eff(0.19)
 
 

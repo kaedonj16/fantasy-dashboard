@@ -58,8 +58,8 @@ from data_building.rookie_pipeline import prospect_model as pm
 
 
 class TestVersionAndConstants:
-    def test_model_version_is_313(self):
-        assert pm.MODEL_VERSION == "3.13"
+    def test_model_version_is_314(self):
+        assert pm.MODEL_VERSION == "3.14"
 
     def test_pools_are_the_pinned_frozen_frame(self):
         assert len(pm.RB_AGE_POOL) == 481
@@ -117,9 +117,16 @@ class TestPhase2AthleticismPercentile:
         assert out[0][2] == pytest.approx(100.0)
 
     def test_te_pool_max_prices_100(self):
+        # 3.14 re-pin (F2-A): the TE pool (n=103 < 200) now
+        # prices through the small-pool shrink toward the
+        # payload, k = 103/203 - the pool max no longer
+        # prices the full 100. The WR form above is
+        # untouched (pool 239 >= 200).
         out = pm._v313_priced_list(
             [("athleticism", 0.09, pm.TE_ATH_POOL[-1])], "TE", [])
-        assert out[0][2] == pytest.approx(100.0)
+        top = pm.TE_ATH_POOL[-1]
+        assert out[0][2] == pytest.approx(
+            top + (100.0 - top) * (103 / 203))
 
     def test_form_is_five_plus_95_pct(self):
         v = (pm.WR_ATH_POOL[50] + pm.WR_ATH_POOL[51]) / 2
@@ -169,6 +176,12 @@ _OR_SEASON = {"season": 2020, "games_played": 10, "receptions": 60,
 
 
 class TestPhase4OrGate:
+    # 3.14 re-pin: _OR_SEASON carries no conference, so its
+    # price now also carries the per-season competition toll
+    # at the default level (_TOLL). The OR-gate multipliers
+    # themselves are unchanged.
+    _TOLL = pm._season_competition_factor({})
+
     def test_rate_path_alone_fires_the_first_multiplier(self):
         # 60.0 rec yds/g clears the rate path; the share path
         # prices 30.6, under both bars (47 / 42). Pre-3.13 the
@@ -176,18 +189,20 @@ class TestPhase4OrGate:
         # second gate (50/g) fires on rate as well.
         got = pm._score_production_season(
             dict(_OR_SEASON), "TE", skip_sagarin=True)
-        assert got == pytest.approx(_te_base(_OR_SEASON) * 1.18 * 1.08,
-                                    abs=0.1)
+        assert got == pytest.approx(
+            _te_base(_OR_SEASON) * 1.18 * 1.08 * self._TOLL,
+            abs=0.1)
 
     def test_second_gate_only(self):
         s = dict(_OR_SEASON, receiving_yards=540)  # 54/g, share 26.4
         got = pm._score_production_season(s, "TE", skip_sagarin=True)
-        assert got == pytest.approx(_te_base(s) * 1.08, abs=0.1)
+        assert got == pytest.approx(_te_base(s) * 1.08 * self._TOLL,
+                                    abs=0.1)
 
     def test_neither_path_no_multiplier(self):
         s = dict(_OR_SEASON, receiving_yards=450)  # 45/g, share 20.1
         got = pm._score_production_season(s, "TE", skip_sagarin=True)
-        assert got == pytest.approx(_te_base(s), abs=0.1)
+        assert got == pytest.approx(_te_base(s) * self._TOLL, abs=0.1)
 
 
 class TestPhase7TeCompletion:
@@ -199,8 +214,11 @@ class TestPhase7TeCompletion:
             dict(_OR_SEASON), "TE", skip_sagarin=True)
         b = pm._score_production_season(
             dict(_OR_SEASON, rush_yards=100), "TE", skip_sagarin=True)
+        # 3.14 re-pin: both prices carry the per-season toll
+        # (conference-less fixture, default level), so the
+        # delta carries it too.
         expect = (pm._scale(70, 20, 100) - pm._scale(60, 20, 100)) \
-            * 0.27 * 1.18 * 1.08
+            * 0.27 * 1.18 * 1.08 * pm._season_competition_factor({})
         assert b - a == pytest.approx(expect, abs=0.05)
 
     def test_l3_sustainment_credit_form_b(self):
@@ -345,7 +363,11 @@ class TestPhase6cBanding:
         raw, _ = pm._rb_efficiency_of_raw(season)
         banded, _ = pm._rb_efficiency_of(season)
         assert raw == pytest.approx(86.0, abs=0.1)
-        assert banded == pytest.approx(90.7, abs=0.15)
+        # 3.14 re-pin: the choke point now applies banding
+        # AND the per-season competition toll (this fixture
+        # carries no conference: the default level).
+        assert banded == pytest.approx(
+            90.7 * pm._season_competition_factor(season), abs=0.15)
 
 
 _DUARTE = {

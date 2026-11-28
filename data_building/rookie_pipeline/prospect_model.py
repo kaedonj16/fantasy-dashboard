@@ -3,7 +3,7 @@ Prospect evaluation model - position-aware, multi-factor scoring.
 
 Each component score is 0-100.  Final prospect_score is a weighted sum.
 
-Model version: 3.13 (see MODEL_VERSION)
+Model version: 3.14 (see MODEL_VERSION)
   v1.x: baseline components below.
   v2.0: adds recruiting-pedigree component (247 Composite via CFBD),
         WEPA opponent-adjusted efficiency blend (QB/RB), and SP+/Team Talent
@@ -165,7 +165,7 @@ from typing import Any, Dict, List, Optional
 
 
 # Grading-model version. Bump on ANY change to scoring logic or weights.
-MODEL_VERSION = "3.13"
+MODEL_VERSION = "3.14"
 
 
 def active_season_year_for_run(today=None) -> Optional[int]:
@@ -528,9 +528,22 @@ _SAGARIN_SCALE   = 0.0647 / 24.0  # ≈ 0.00270 per rating point above avg
 def _conf_quality(conference: Optional[str]) -> float:
     if not conference:
         return DEFAULT_CONF_QUALITY
-    conf_lower = conference.lower()
+    # v3.14 (SSD lab V6): exact match first. The substring scan
+    # returns the first table key contained in the string, and
+    # "American" precedes "Mid-American" in the table - so every
+    # Mid-American season priced at the American Athletic's 0.78
+    # instead of the MAC's own 0.60 (338 frame seasons; a
+    # career-MAC competition leg read 60.0 instead of 27.27 and
+    # the level discount tolled ~5.8% instead of ~20.3%). The
+    # table's values are unchanged; they are now correctly
+    # addressed. Substring matching remains the fallback for
+    # decorated forms ("Southeastern Conference").
+    conf_clean = conference.strip().lower()
     for k, v in CONF_QUALITY.items():
-        if k.lower() in conf_lower:
+        if k.lower() == conf_clean:
+            return v
+    for k, v in CONF_QUALITY.items():
+        if k.lower() in conf_clean:
             return v
     return DEFAULT_CONF_QUALITY
 
@@ -562,6 +575,61 @@ def _sagarin_dom_adj(rating: Optional[float], conference: Optional[str] = None) 
 # ─────────────────────────────────────────────────────────────────────────────
 # Component scorers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _season_competition_value(season: Dict) -> float:
+    """One season's competition-leg value: the leg's own scale
+    applied to that season's conference quality, with the leg's
+    Notre Dame team rule (calc_competition_score prices ND at a
+    flat 0.94 quality whatever the conference label says). This
+    is exactly the value calc_competition_score would return
+    for a one-season profile, so a single-level career's
+    per-season factors compose to the old profile-level factor
+    unchanged."""
+    team = (season.get("team", "") or "").lower()
+    if "notre dame" in team:
+        quality = 0.94
+    else:
+        quality = _conf_quality(season.get("conference"))
+    return _clip(_scale(quality, 0.45, _COMPETITION_SCALE_HI))
+
+
+def _competition_discount_factor(competition_value: float) -> float:
+    """The COMPETITION_CFG curve at one competition-leg value:
+    1 - depth x gap, the gap bent concave inside the boundary
+    band (see COMPETITION_CFG). Through v3.13 score_prospect
+    applied this once, at the profile's blended competition
+    value, to the finished production and efficiency legs.
+    v3.14 prices it per season instead (see
+    _season_competition_factor)."""
+    _floor = float(COMPETITION_CFG.get("discount_floor", 65.0))
+    _depth = float(COMPETITION_CFG.get("prod_discount", 0.0) or 0.0)
+    _gap = max(0.0, (_floor - competition_value) / _floor)
+    _pow = float(COMPETITION_CFG.get("discount_power", 1.0) or 1.0)
+    if _pow != 1.0 and _gap > 0.0:
+        _band = float(COMPETITION_CFG.get("discount_band", 50.0))
+        _bgap = max(0.0, (_floor - _band) / _floor)
+        if 0.0 < _bgap and _gap < _bgap:
+            _gap = _bgap * (_gap / _bgap) ** _pow
+    return 1.0 - _depth * _gap
+
+
+def _season_competition_factor(season: Dict) -> float:
+    """The level toll for one season's absolute-output prices
+    (v3.14, SSD lab D1b): the shipped discount curve keyed on
+    the season's OWN competition value. Keying per season is
+    what lets the tax land on a transfer's small-school seasons
+    without touching his big-school ones - the profile-level
+    keying priced the whole file at its recency-blended level,
+    so a level that changed across seasons was taxed at neither
+    season's true rate (the Koziol form: two MAC seasons and a
+    Big 12 season blended to a competition value above the
+    discount floor, toll exactly 0.00). For a single-level
+    career the factors are uniform and the composition is the
+    shipped discount, arithmetically - the lab's controls
+    (Kupp, Wentz, the G5 hits) are byte-identical under the
+    re-keying."""
+    return _competition_discount_factor(_season_competition_value(season))
+
 
 def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
                              _partial: bool = False) -> float:
@@ -600,6 +668,14 @@ def _score_production_season(season: Dict, pos: str, skip_sagarin: bool = False,
     # prices at 1.0 (fail closed, never a penalty).
     if not _partial:
         _prod = _clip(_prod * _room_multiplier_for_season(season, pos))
+    # v3.14 (SSD lab D1b): the competition discount prices HERE,
+    # per season, on the season's own level - the profile-level
+    # application in score_prospect is retired, so the toll
+    # lands exactly once. A partial (in-progress) season is
+    # exempt, like the room price above: its level evidence is
+    # still forming, and the in-season shrink already paces it.
+    if not _partial:
+        _prod = _clip(_prod * _season_competition_factor(season))
     return _prod
 
 
@@ -1063,6 +1139,25 @@ PROD_EVIDENCE_CFG = {
     # the presence release. See prospect-runs/
     # bowers-mccaffrey-residuals-2026-11-25.md (L4).
     "release_min_price_by_pos": {"RB": 55.0, "TE": 55.0},
+    # v3.14 (TE saturation lab, F1-E): at TE the priced release
+    # additionally requires the profile's EFFICIENCY leg to
+    # clear this floor. The release's corroboration test was
+    # volume-only - a second season that also produced - and in
+    # the recorded pool that test never freed a low-efficiency
+    # spike (all nine historically released TE spikes carry
+    # efficiency legs >= 45.3), because high TE volume and high
+    # YPR have always arrived together. The first live case
+    # separated them: a 100-clip season at a 22.0 efficiency
+    # print, corroborated by a second volume season, released
+    # in full. Corroboration now has a second dimension: the
+    # spike's file must carry a quality pulse somewhere, priced
+    # by the efficiency leg. Zero frame binders - the condition
+    # amends the definition of corroboration inside machinery
+    # shipped twice (RB-2b, L4); it is not a new cap. F1-L (a
+    # leg-level production cap on the same objection) is NOT
+    # shipped alongside it: the labs ruled that counts the
+    # same objection twice.
+    "release_min_efficiency_by_pos": {"TE": 40.0},
 }
 
 
@@ -1089,7 +1184,21 @@ def _production_evidence_cap(prod: float, seasons: List[Dict],
              for s in featured),
             reverse=True)
         if len(_prices) >= 2 and _prices[1] >= _rmp:
-            return prod
+            # v3.14 (F1-E): where the cfg arms an efficiency
+            # floor for the position, the release also requires
+            # the efficiency leg to clear it - otherwise the
+            # spike keeps the capped price below. An efficiency
+            # leg that is missing entirely does not block the
+            # release (missing stays neutral, as everywhere).
+            _emin = (PROD_EVIDENCE_CFG.get(
+                "release_min_efficiency_by_pos") or {}).get(pos)
+            _blocked = False
+            if _emin is not None:
+                _eff_leg = calc_efficiency_score(seasons, pos)
+                _blocked = (_eff_leg is not None
+                            and _eff_leg < float(_emin))
+            if not _blocked:
+                return prod
     if len(featured) == 1 and age is not None:
         # Youth release: the single featured season was played
         # at an elite-underclassman age (draft-anchored, the
@@ -1575,7 +1684,11 @@ def _qb_efficiency_of(season: Dict) -> Optional[float]:
     if not parts:
         return None
     wsum = sum(w for _, w in parts)
-    return sum(s * w for s, w in parts) / wsum
+    # v3.14 (SSD lab D1b): the season's efficiency price
+    # carries its own level toll, like its production price
+    # (see _season_competition_factor).
+    return _clip(sum(s * w for s, w in parts) / wsum
+                 * _season_competition_factor(season))
 
 
 def _te_efficiency_of(season: Dict) -> Optional[float]:
@@ -1596,9 +1709,12 @@ def _te_efficiency_of(season: Dict) -> Optional[float]:
         targets = 0.0
     if targets > 0:
         catch_rate_score = _scale(recs / targets, 0.60, 0.85)
-        return (_scale(ypr, 7.5, 14.0) * 0.625
+        _val = (_scale(ypr, 7.5, 14.0) * 0.625
                 + catch_rate_score * 0.375)
-    return _scale(ypr, 7.5, 14.0)
+    else:
+        _val = _scale(ypr, 7.5, 14.0)
+    # v3.14 (SSD lab D1b): per-season level toll, as production.
+    return _clip(_val * _season_competition_factor(season))
 
 
 # v3.11 round 4 (Phase B): the RB efficiency leg's rush-quality
@@ -2052,7 +2168,12 @@ def _rb_efficiency_of(season: Dict):
     value, form = _rb_efficiency_of_raw(season)
     if value is None:
         return value, form
-    return _rb_eff_band(value, _rb_opportunities(season)), form
+    # v3.14 (SSD lab D1b): per-season level toll on the banded
+    # price, as production (the band re-prices within the
+    # workload window first; the toll then prices the level the
+    # banded performance came against).
+    return _clip(_rb_eff_band(value, _rb_opportunities(season))
+                 * _season_competition_factor(season)), form
 
 
 # v3.11 round 2: volume shrinkage on the RB efficiency leg. The
@@ -2086,7 +2207,7 @@ EFF_VOLUME_SHRINK_CFG = {
 }
 
 
-def calc_efficiency_score(
+def _calc_efficiency_score_impl(
     seasons: List[Dict],
     position: str,
     eval_metrics: Optional[Dict] = None,
@@ -2248,6 +2369,14 @@ def calc_efficiency_score(
                 eff = _rb_pair_value(ls)
                 if eff is not None:
                     eff = _rb_eff_band(eff, _rb_opportunities(ls))
+                    # v3.14 (SSD build note): this direct pair
+                    # read is a priced season, so it carries the
+                    # per-season level toll like one - the lab's
+                    # wrapper reached only _rb_efficiency_of, and
+                    # a build that left this call site untolled
+                    # would leak the tax for blocked-PBP seasons
+                    # (the Aaron Jones artifact).
+                    eff = _clip(eff * _season_competition_factor(ls))
                 if eff is None:
                     return None
             else:
@@ -2517,6 +2646,33 @@ def calc_efficiency_score(
             eff = _lvl + (eff - _lvl) * (_n / (_n + _k))
 
     return _clip(eff)
+
+
+def calc_efficiency_score(
+    seasons: List[Dict],
+    position: str,
+    eval_metrics: Optional[Dict] = None,
+    wepa: Optional[Dict] = None,
+    _inseason_year: Optional[int] = None,
+    _season_elapsed: Optional[int] = None,
+) -> Optional[float]:
+    """The efficiency leg (see _calc_efficiency_score_impl).
+
+    v3.14 (SSD lab D1b): QB/RB/TE price their level toll per
+    season inside their per-season helpers. The WR leg is a
+    latest-season read with player-level supplements, so its
+    toll lands here, once, at the latest season's factor - the
+    same season the leg reads. The impl's own in-season
+    recursion resolves to this wrapper, exactly as the leg has
+    always re-entered itself for the completed-season
+    baseline."""
+    _out = _calc_efficiency_score_impl(
+        seasons, position, eval_metrics=eval_metrics, wepa=wepa,
+        _inseason_year=_inseason_year, _season_elapsed=_season_elapsed)
+    if _out is not None and str(position).upper() == "WR":
+        _ls = _latest_season(seasons) or {}
+        _out = _clip(_out * _season_competition_factor(_ls))
+    return _out
 
 
 # Typical draft-class age by position (age at start of NFL rookie year).
@@ -3330,6 +3486,29 @@ def calc_recruiting_score(recruiting: Optional[Dict[str, Any]]) -> Optional[floa
     return None
 
 
+def _has_schedule_data(seasons: List[Dict],
+                       team_context: Optional[Dict] = None) -> bool:
+    """Whether a profile carries any schedule data of its own:
+    a conference string on any season, a Notre Dame team row,
+    or an SP+ SOS on file for its latest team-season. This is
+    the exact test calc_competition_score gates its None on,
+    shared with the v3.14 classification scope in
+    score_prospect so the two can never disagree about what
+    "unpriced" means."""
+    if any(
+        (s.get("conference") or "").strip()
+        or "notre dame" in (s.get("team", "") or "").lower()
+        for s in seasons
+    ):
+        return True
+    if team_context and seasons:
+        _lat = max(seasons, key=lambda s: s.get("season", 0))
+        _key = ((_lat.get("team") or "").lower().strip(),
+                _lat.get("season", 0))
+        return (team_context.get(_key) or {}).get("sp_sos") is not None
+    return False
+
+
 def calc_competition_score(
     seasons: List[Dict],
     team_context: Optional[Dict] = None,
@@ -3355,17 +3534,7 @@ def calc_competition_score(
     if not seasons:
         return None
 
-    _has_schedule = any(
-        (s.get("conference") or "").strip()
-        or "notre dame" in (s.get("team", "") or "").lower()
-        for s in seasons
-    )
-    if not _has_schedule and team_context:
-        _lat = max(seasons, key=lambda s: s.get("season", 0))
-        _key = ((_lat.get("team") or "").lower().strip(),
-                _lat.get("season", 0))
-        _has_schedule = (team_context.get(_key) or {}).get("sp_sos") is not None
-    if not _has_schedule:
+    if not _has_schedule_data(seasons, team_context):
         return None
 
     # Sort seasons by year (most recent first)
@@ -3813,7 +3982,31 @@ BLEND_CFG = {
     # bounty, S11.4), not its peak address; the exclusion
     # stays available behind this empty default as
     # Kaedon's ruling.
-    "peak_exclude_by_pos": {},
+    # v3.14 (cluster pricing lab, anchored voice V-A'): at TE the
+    # funnel cluster {production, utilization, breakout} is one
+    # fact measured three ways (priced-leg correlations on
+    # gate_rows_v8: production x utilization +.754, utilization
+    # x breakout +.659, production x breakout +.584), and the
+    # production + breakout pair co-resides in 67.4% of TE peak
+    # sets, so the fact is paid twice at the 0.74 peak share.
+    # The cluster keeps exactly one peak voice and the voice is
+    # production: breakout joins utilization here, keeping its
+    # full MEAN weight (.1363 at TE) but no peak slot.
+    # Production's forced admission is untouched - it is the
+    # scale's level control, and the lab's strongest-voice form
+    # died precisely for repealing it (TE Poor 7.7 -> 17.9,
+    # fragment risers on single-digit production legs). TE-
+    # scoped only: at WR the cluster is a pair (utilization is
+    # unpriced there, a separate open ruling) and at RB the form
+    # taxes McCaffrey -2.09 for an unnamed problem. Measured on
+    # gate_rows_v8 over the 3.14 base: TE gate .4215/.3825 ->
+    # .4294/.3762 (Spearman within noise), TE Poor 7.7 -> 5.1,
+    # Bowers/Pitts/Chase/Burrow byte-identical; the named cost
+    # is the funnel-producer cohort (Fannin Jr. -7.37, Mayer
+    # -5.78 out of 92+, McBride -7.47, Kincaid -7.35), accepted
+    # on Kaedon's delegated ruling 2026-11-27. See
+    # prospect-runs/cluster-pricing-lab-2026-11-27.md (S5).
+    "peak_exclude_by_pos": {"TE": ("breakout",)},
     # v3.12 (RB-2b hygiene, peak-composition commission S7.4): a
     # peak slot must carry at least this much weight. The peak set
     # is chosen by value rank, weight-blind, so a leg priced at a
@@ -3958,6 +4151,17 @@ COMPETITION_CFG = {
     # 2.7%) and competition 55 pays ~7.2% (was 5.4%).
     "discount_band": 50.0,
     "discount_power": 0.3,
+    # v3.14 (SSD lab D1b): the curve above is unchanged; its
+    # KEYING moves from the profile's blended competition
+    # value to each season's own value, priced inside the
+    # season pricers before aggregation
+    # (_season_competition_factor; the score_prospect
+    # application is retired). prod_discount is the curve's
+    # depth input, consumed per season; discount_efficiency
+    # records that efficiency prices carry the toll too
+    # (per-season since v3.14, inside the efficiency helpers
+    # and the WR leg's wrapper); discount_utilization stays
+    # False (a share is a share at any level).
 }
 
 
@@ -4374,11 +4578,29 @@ TE_SUSTAIN_CFG = {
 
 def _pct_reanchor(sorted_pool, value):
     """5 + 95 x pct against a pinned frozen pool (the 3.12
-    RB athleticism form, generalized to the 3.13 pools)."""
+    RB athleticism form, generalized to the 3.13 pools).
+
+    v3.14 (TE saturation lab, F2-A): a pool under 200 prices
+    its percentile through a shrink toward the payload,
+    k = n / (n + 100) - 100 pseudo-observations of prior. A
+    99th percentile estimated from 103 bodies (the tested-TE
+    pool), priced to the tenth, is false precision: near the
+    tail the rank steps are decided by one to three bodies
+    and a sub-point payload gap can be worth a full price
+    point by accident of local density. The shrink admits
+    the estimation error in proportion to how little pool
+    there is; pools at or above 200 (WR athleticism 239, RB
+    age 481) price at the full percentile, byte-identical to
+    3.13. In practice this touches only the TE pool."""
     import bisect as _bisect
     pct = _bisect.bisect_right(
         sorted_pool, float(value)) / len(sorted_pool)
-    return 5.0 + 95.0 * pct
+    priced = 5.0 + 95.0 * pct
+    _n = len(sorted_pool)
+    if _n < 200:
+        _k = _n / (_n + 100.0)
+        priced = float(value) + (priced - float(value)) * _k
+    return priced
 
 
 def _thin_top_map(value, knots, top_targets):
@@ -5169,6 +5391,30 @@ def score_prospect(
     seasons  = [s for s in (prospect.get("seasons") or [])
                 if season_has_counting_stats(s)]
     _data_quality = "ok" if seasons else "truncated"
+    # v3.14 (SSD lab, scoped classification): when the profile
+    # carries NO schedule data of its own - the exact condition
+    # under which the competition leg returns None and the
+    # level tax never fires - price its level from the school's
+    # classification of record (school_classification.py) when
+    # one exists: the seasons are filled with the level label
+    # on COPIES, and every downstream price (the leg, the
+    # per-season discount) reads it exactly like a stored
+    # conference. Scoped to the otherwise-unpriced: a profile
+    # with any schedule data is untouched, and a school with
+    # no classification stays unpriced (the priced-list cap
+    # backstop below is its guard). This is a data repair, not
+    # a model default: "Monmouth is FCS" is a fact the rows
+    # were missing, not a neutral invented for them.
+    if seasons and not _has_schedule_data(
+            seasons, prospect.get("team_context")):
+        from data_building.rookie_pipeline.school_classification import (
+            school_competition_level)
+        _lvl = school_competition_level(prospect.get("school"))
+        if _lvl:
+            seasons = [
+                dict(_s, conference=_lvl)
+                if not (_s.get("conference") or "").strip() else _s
+                for _s in seasons]
     # v3.8 (M2 role gate): the LEVEL legs (production, utilization -
     # and the career aggregates inside them) read only the seasons
     # from the player's first real role onward. See
@@ -5342,37 +5588,19 @@ def score_prospect(
         if _p_cap is not None and production_score > _p_cap:
             production_score = _p_cap
 
-    # v3.9 competition discount (see COMPETITION_CFG): the
-    # absolute-output legs are priced against the level they were
-    # achieved at, before weights, redistribution or blending see
-    # them - the discounted values are the legs (payload,
-    # percentiles and blend all read the same numbers).
-    # Utilization is exempt unless the cfg arms it (a share is a
-    # share at any level).
-    if (float(COMPETITION_CFG.get("prod_discount", 0.0) or 0.0) > 0.0
-            and competition_score is not None):
-        _c_floor = float(COMPETITION_CFG.get("discount_floor", 70.0))
-        _c_gap = max(0.0, (_c_floor - competition_score) / _c_floor)
-        _c_pow = float(COMPETITION_CFG.get("discount_power", 1.0) or 1.0)
-        if _c_pow != 1.0 and _c_gap > 0.0:
-            # Boundary-band bend (see COMPETITION_CFG): concave
-            # inside [discount_band, discount_floor], continuous
-            # with the linear depth at the band's lower edge,
-            # the original slope untouched below it.
-            _c_band = float(COMPETITION_CFG.get(
-                "discount_band", 50.0))
-            _c_bgap = max(0.0, (_c_floor - _c_band) / _c_floor)
-            if 0.0 < _c_bgap and _c_gap < _c_bgap:
-                _c_gap = _c_bgap * (_c_gap / _c_bgap) ** _c_pow
-        _c_factor = 1.0 - float(COMPETITION_CFG["prod_discount"]) * _c_gap
-        if production_score is not None:
-            production_score = _clip(production_score * _c_factor)
-        if utilization_score is not None and COMPETITION_CFG.get(
-                "discount_utilization", True):
-            utilization_score = _clip(utilization_score * _c_factor)
-        if efficiency_score is not None and COMPETITION_CFG.get(
-                "discount_efficiency", True):
-            efficiency_score = _clip(efficiency_score * _c_factor)
+    # The v3.9 competition discount no longer applies HERE.
+    # Through v3.13 this block priced the toll once, at the
+    # profile's blended competition value, on the finished
+    # production and efficiency legs. v3.14 (SSD lab D1b)
+    # prices the same curve per season, inside the season
+    # pricers themselves (_score_production_season and the
+    # efficiency helpers, keyed by _season_competition_factor),
+    # so each season's output is taxed at its own level exactly
+    # once and a transfer's levels are no longer averaged into
+    # a toll that lands nowhere. The legs above already carry
+    # the discount; COMPETITION_CFG remains the curve's
+    # definition. Utilization was never discounted and still
+    # is not (a share is a share at any level).
 
     # v3.7: there is no capital leg. The draft_capital argument is
     # accepted for call compatibility and never read: no pick (actual,
@@ -5644,6 +5872,25 @@ def score_prospect(
     # skeptic is paid in the mean always.
     if pos == "RB":
         _trim_block = tuple(_trim_block) + ("efficiency",)
+
+    # v3.14 (SSD lab C2b, the backstop): a profile whose
+    # competition STILL did not price - no schedule data and
+    # no classification for its school - cannot ride
+    # production at full price in the blend: the priced
+    # production value caps at the production-ceiling floor
+    # (PROD_CEILING_CFG cap_floor, 82). A blend treatment like
+    # the transforms above; the payload leg keeps its raw
+    # value. On the recorded frame this is an exact no-op (the
+    # unpriced profiles there are the no-season profiles,
+    # whose production is anchored or None); live it bounds
+    # the remaining unknown-level files (D2/D3 programmes and
+    # FBS schools whose conference strings are missing).
+    if not any(_n == "competition" for _n, _, _ in _priced):
+        _unpriced_cap = float(PROD_CEILING_CFG.get("cap_floor", 82.0))
+        _priced = [
+            (_n, _w, min(_v, _unpriced_cap)
+             if _n == "production" else _v)
+            for (_n, _w, _v) in _priced]
 
     prospect_score = _blend_grade(_priced, pos,
                                   allow_peak=not _anchor_perf,

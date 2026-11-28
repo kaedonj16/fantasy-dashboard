@@ -48,7 +48,7 @@ from data_building.rookie_pipeline.mock_draft_consensus import (
 
 class TestVersion:
     def test_model_version_is_37(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
 
 
 class TestCompetitionDesaturation:
@@ -128,11 +128,17 @@ class TestEfficiencyDesaturation:
         # consolidation then took market share out of the leg entirely,
         # so the season now prices on yards per reception alone:
         # scale(17.0, 8.5, 19.5) = 77.27, at any share.
-        assert self._eff(0.30) == pytest.approx(77.27, abs=0.1)
-        assert self._eff(0.05) == pytest.approx(77.27, abs=0.1)
+        # 3.14 re-pin: the WR leg carries the per-season
+        # competition toll (conference-less fixture, default
+        # level): 77.27 x 0.9143 = 70.65.
+        assert self._eff(0.30) == pytest.approx(70.65, abs=0.1)
+        assert self._eff(0.05) == pytest.approx(70.65, abs=0.1)
 
     def test_new_anchors_are_the_saturation_point(self):
-        assert self._eff(0.34, ypr=19.5) == pytest.approx(100.0)
+        # The scale's saturation point is still 100; on a
+        # conference-less fixture the 3.14 toll reads it at
+        # 91.43 (100 x 0.9143).
+        assert self._eff(0.34, ypr=19.5) == pytest.approx(91.43, abs=0.1)
 
 
 class TestTEEliteBonusGate:
@@ -156,8 +162,12 @@ class TestTEEliteBonusGate:
         # The identical rates as a completed season: both bonuses fire.
         completed_6 = self._prod(431, 4, 41, 6, partial=False)
         assert partial_6 == pytest.approx(70.83, abs=0.1)
-        assert completed_6 == pytest.approx(90.26, abs=0.1)
-        assert completed_6 - partial_6 > 15.0
+        # 3.14 re-pin: the completed season carries the
+        # per-season toll (conference-less fixture, default
+        # level): 90.26 x 0.9143 = 82.53. The partial season
+        # is exempt, so the bonus gap narrows to ~11.7.
+        assert completed_6 == pytest.approx(82.53, abs=0.1)
+        assert completed_6 - partial_6 > 10.0
 
     def test_in_progress_season_with_8_plus_games_clears_bonuses(self):
         # Same per-game rates stretched over 9 in-progress games
@@ -420,6 +430,10 @@ class TestShareOutOfEfficiency:
               "yards_after_catch_per_reception": 2.5}]
         eff = pm.calc_efficiency_score(s, "WR")
         expected = pm._scale(20.0, 8.5, 19.5) * 0.70 + pm._scale(2.5, 2.5, 7.5) * 0.30
+        # 3.14 re-pin: the finished WR leg carries the
+        # per-season toll at the latest season (conference-
+        # less fixture, default level).
+        expected *= pm._season_competition_factor(s[0])
         assert eff == pytest.approx(expected, abs=0.01)
 
 
@@ -445,10 +459,15 @@ class TestQBConsolidation:
 
 class TestTeamContextConsolidation:
     def test_transfer_no_longer_moves_production(self):
+        # v3.6's point stands for team context (the transfer
+        # itself moves nothing), but 3.14 supersedes the
+        # equality: the per-season competition toll prices
+        # the dropped-to season at its own level, so the
+        # Sun Belt file now reads lower on production.
         stayed = pm.score_prospect(_two_season_wr("SEC"), None, skip_sagarin=True)
         dropped = pm.score_prospect(_two_season_wr("Sun Belt"), None,
                                     skip_sagarin=True)
-        assert stayed["production_score"] == dropped["production_score"]
+        assert dropped["production_score"] < stayed["production_score"]
 
     def test_scheme_discount_gone(self):
         # Leg level (score_prospect's room adjustments legitimately
@@ -622,12 +641,20 @@ class TestGPCliff:
         got = pm._score_production_season(s, "WR", skip_sagarin=True)
         raw = pm._score_production_season_raw(s, "WR", skip_sagarin=True)
         # Wrapper shrinks the raw read toward 52 by GP/4 = 0.75.
-        assert got == pytest.approx(52.0 + (raw - 52.0) * 0.75, abs=0.01)
+        # 3.14 re-pin: the wrapper then applies the per-season
+        # competition toll (conference-less fixture).
+        assert got == pytest.approx(
+            (52.0 + (raw - 52.0) * 0.75)
+            * pm._season_competition_factor(s), abs=0.01)
 
     def test_four_game_season_unshrunk(self):
         s = {"season": 2025, "games_played": 4, "receptions": 20,
              "receiving_yards": 260, "receiving_tds": 2,
              "team_pass_yards": 1100, "team_pass_tds": 9,
              "dominator_rating": 0.25}
+        # Unshrunk at 4 GP; 3.14 re-pin: the per-season
+        # toll is the only wrapper step left.
         assert (pm._score_production_season(s, "WR", skip_sagarin=True)
-                == pm._score_production_season_raw(s, "WR", skip_sagarin=True))
+                == pytest.approx(
+                    pm._score_production_season_raw(s, "WR", skip_sagarin=True)
+                    * pm._season_competition_factor(s), abs=0.01))

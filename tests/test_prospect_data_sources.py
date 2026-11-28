@@ -28,7 +28,7 @@ from data_building.rookie_pipeline.ingestion import (
 
 class TestModelVersion:
     def test_version_bumped_for_grading_change(self):
-        assert MODEL_VERSION == "3.13"
+        assert MODEL_VERSION == "3.14"
 
     def test_recruiting_weight_present_and_sums_to_one(self):
         # Weights change only (F12 fold, 2026-11-24): recruiting is
@@ -179,7 +179,7 @@ class TestScoreProspectV3:
 
     def test_v2_fields_in_output(self):
         out = score_prospect(self._prospect())
-        assert out["model_version"] == "3.13"
+        assert out["model_version"] == "3.14"
         assert out["recruiting_score"] > 90
 
     def test_recruiting_moves_final_score(self):
@@ -197,7 +197,7 @@ class TestScoreProspectV3:
         del p["recruiting"]
         out = score_prospect(p)
         assert out["recruiting_score"] is None
-        assert out["model_version"] == "3.13"
+        assert out["model_version"] == "3.14"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
