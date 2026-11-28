@@ -280,8 +280,11 @@ class TestFloorRedistribution:
         # (step A alone in both modes: his utilization was
         # peak-resident; steps B/C1 net zero on his profile -
         # S14).
-        assert complete["prospect_score"] == 85.90
-        assert inseason["prospect_score"] == 85.13
+        # v3.14 re-pin: -> 84.60 complete / 82.97 in-season
+        # under per-season discount keying (same step as
+        # test_prospect_v37's Mestemaker pin).
+        assert complete["prospect_score"] == 84.60
+        assert inseason["prospect_score"] == 82.97
         assert complete["confidence_score"] == 45.0
         assert inseason["confidence_score"] == 33.0  # GP 5: discount 12
 
@@ -400,8 +403,10 @@ class TestPanelReproduction:
         # same step as the toggle test; the durability repair
         # itself still contributes nothing) -> 85.90 in v3.11
         # round 6 (step A: utilization peak-residency removed,
-        # same step as the toggle test).
-        assert out["prospect_score"] == 85.90
+        # same step as the toggle test) -> 84.60 in v3.14
+        # (per-season discount keying, same step as the
+        # toggle test).
+        assert out["prospect_score"] == 84.60
         # v3.3 priced his 2-game, 41-attempt backup season as missed
         # time: durability 6.01. Excluded as a non-role season, his
         # durability is sane; QB durability weight is 0.00, so the

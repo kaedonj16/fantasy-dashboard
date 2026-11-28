@@ -46,9 +46,9 @@ from test_prospect_v32 import SMITH
 
 
 class TestVersion:
-    def test_model_version_is_313(self):
-        # 3.13 re-pin (was test_model_version_is_312).
-        assert pm.MODEL_VERSION == "3.13"
+    def test_model_version_is_314(self):
+        # 3.14 re-pin (was test_model_version_is_313).
+        assert pm.MODEL_VERSION == "3.14"
 
     def test_rb2b_cfgs(self):
         assert pm.PROD_EVIDENCE_CFG["release_min_price"] == 0.0

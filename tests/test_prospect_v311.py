@@ -187,7 +187,11 @@ class TestEndToEnd:
         new = pm.score_prospect(copy.deepcopy(anderson), None,
                                 skip_sagarin=True,
                                 _active_season_year=2026)
-        assert new["prospect_score"] == pytest.approx(71.41,
+        # 3.14 re-pin: 71.41 -> 71.98 under per-season
+        # discount keying (his MW seasons toll at their own
+        # level; the additive leg parts are no longer tolled
+        # a second time at the profile level).
+        assert new["prospect_score"] == pytest.approx(71.98,
                                                       abs=0.05)
         monkeypatch.setattr(
             pm, "BLEND_CFG",
@@ -195,7 +199,11 @@ class TestEndToEnd:
         old = pm.score_prospect(copy.deepcopy(anderson), None,
                                 skip_sagarin=True,
                                 _active_season_year=2026)
-        assert old["prospect_score"] == pytest.approx(71.62,
+        # 3.14 re-pin: the un-excluded arm moves with the
+        # same keying (71.62 -> 72.19); the step-A delta the
+        # test exists to pin is unchanged at -0.21
+        # (71.98 vs 72.19).
+        assert old["prospect_score"] == pytest.approx(72.19,
                                                       abs=0.05)
 
     def test_smith_fixture_moves_only_a_whisker(self):
@@ -221,7 +229,7 @@ class TestEndToEnd:
 
 class TestVersion:
     def test_model_version_is_311(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
 
     def test_shipped_revision_cfgs(self):
         # The 3.11 revision (Kaedon's three calibration flags):
@@ -299,11 +307,20 @@ class TestDiscountBandBend:
             linear["prospect_score"], abs=0.01)
 
     def test_in_band_pays_a_material_toll(self):
-        on = _prod_with_cfg(MAC_KUPP)
+        # 3.14 re-pin: the matcher fix prices the MAC at its
+        # own 0.60 (competition 27.27, BELOW the band), so
+        # the in-band case is now the American line at the
+        # same 0.78 quality the buggy matcher used to lend
+        # the MAC (competition 60.0, inside [50, 65)).
+        aac_kupp = copy.deepcopy(KUPP_LINE)
+        for _s in aac_kupp["seasons"]:
+            _s["team"] = "Memphis"
+            _s["conference"] = "American"
+        on = _prod_with_cfg(aac_kupp)
         comp = on["competition_score"]
         assert 50.0 <= comp < 65.0
-        raw = _prod_with_cfg(MAC_KUPP, prod_discount=0.0)
-        linear = _prod_with_cfg(MAC_KUPP, discount_power=1.0)
+        raw = _prod_with_cfg(aac_kupp, prod_discount=0.0)
+        linear = _prod_with_cfg(aac_kupp, discount_power=1.0)
         # The bent factor at this competition, from the cfg.
         gap = (65.0 - comp) / 65.0
         bgap = (65.0 - 50.0) / 65.0
@@ -607,12 +624,17 @@ class TestEfficiencyVolumeShrink:
         # because _eff's override no longer changes anything
         # the bander does not already own - see the shipped
         # value below.)
-        assert raw == pytest.approx(91.99, abs=0.1)
+        # 3.14 re-pin: the banded print now carries the
+        # per-season toll as well (conference-less fixture,
+        # default level): (90.7 x 0.9143) + 1.29 consistency
+        # (untolled, it is a rate comparison) = 84.22.
+        assert raw == pytest.approx(84.22, abs=0.1)
         # n = 157 + 25 = 182 opportunities behind the print:
         # inside its +/-75 workload window the 86.0 print is
         # band-elite, and the ramped workload cap binds at
-        # 90 + 7 x 0.1 = 90.7; the leg is 90.7 + 1.29 = 91.99.
-        assert shrunk == pytest.approx(91.99, abs=0.15)
+        # 90 + 7 x 0.1 = 90.7; the leg is 90.7 + 1.29 = 91.99
+        # before the 3.14 toll (see above).
+        assert shrunk == pytest.approx(84.22, abs=0.15)
 
     def test_volume_backed_rate_stands(self):
         big = dict(_EFF_SPIKE, rush_attempts=400, rush_yards=2904,
@@ -623,11 +645,12 @@ class TestEfficiencyVolumeShrink:
         # true workhorse seasons it is not band-elite (the
         # window's p85 sits at/above it), so banding leaves
         # it standing and the leg keeps the parity read
-        # 86.0 + 1.29 = 87.29. Under banding the ordering vs
-        # the 182-opportunity spike above inverts BY DESIGN:
-        # price is set within workload peers, capped by
-        # workload, not discounted toward a level.
-        assert shrunk == pytest.approx(87.29, abs=0.15)
+        # 86.0 + 1.29 = 87.29 before the 3.14 per-season
+        # toll (79.92 after it). Under banding the ordering
+        # vs the 182-opportunity spike above inverts BY
+        # DESIGN: price is set within workload peers, capped
+        # by workload, not discounted toward a level.
+        assert shrunk == pytest.approx(79.92, abs=0.15)
         assert shrunk < _eff([_EFF_BASE, _EFF_SPIKE])
 
     def test_ordinary_print_is_untouched(self):
@@ -679,8 +702,12 @@ class TestProductionLevelCeiling:
 
     def test_fcs_spike_is_capped_before_the_discount(self):
         # The Gillman shape: competition 49.09, raw production
-        # ~100. The cap (86.9 at his level) lands first, then
-        # the ~9% discount prices the capped value: 79.46.
+        # ~100. Pre-3.14 the cap (86.9 at his level) landed
+        # first, then the ~9% discount priced the capped
+        # value: 79.46. 3.14 re-pin (SSD V7f): the discount
+        # prices per season INSIDE the leg now, so the raw
+        # ~100 reads ~91.4 tolled and the ceiling binds on
+        # the tolled value at the same 86.91 cap.
         on = pm.score_prospect(copy.deepcopy(FCS_RB), None,
                                skip_sagarin=True)
         off = _score_with(FCS_RB, "PROD_CEILING_CFG",
@@ -689,8 +716,13 @@ class TestProductionLevelCeiling:
             49.09, abs=0.5)
         assert off["production_score"] > 90.0
         assert on["production_score"] == pytest.approx(
-            79.46, abs=0.75)
-        assert on["prospect_score"] < off["prospect_score"] - 3.0
+            86.91, abs=0.75)
+        # The ceiling's own bite at 3.14 is on the leg
+        # (tolled ~91.4 -> capped 86.91); the grade follows
+        # by 1.74 (the pre-3.14 -3.0+ grade delta double-
+        # counted the discount the toll now prices inside).
+        assert off["production_score"] - on["production_score"] > 4.0
+        assert on["prospect_score"] < off["prospect_score"] - 1.5
 
     def test_wr_at_the_same_level_is_untouched(self):
         # The Kupp line reads competition 49.1 - Gillman's
@@ -738,14 +770,23 @@ class TestTEEfficiencyBestSeason:
         # season at face value, less the consistency drag).
         # Best-season pricing: peak (942 yards, YPR scale 100)
         # at 0.90 + latest (80.77) at 0.10 = 98.08, consistency
-        # -1.20 -> 96.88.
+        # -1.20 -> 96.88. 3.14 re-pin: the per-season values
+        # carry the competition toll (conference-less
+        # fixture, default level 0.9143); the consistency
+        # term is a rate comparison and is not tolled:
+        # 98.08 x 0.9143 - 1.20 = 88.48.
         eff = _te_eff(_BOWERS_TE)
-        assert eff == pytest.approx(96.88, abs=0.25)
-        assert eff > 90.0
+        assert eff == pytest.approx(88.48, abs=0.25)
+        assert eff > 85.0
 
     def test_latest_peak_blend_is_symmetric(self):
         # When the latest season IS the peak, the blend of the
         # value with itself returns the single-season read.
+        # 3.14 re-pin: at 3.13 both sides clipped at 100 and
+        # the identity held trivially; the per-season toll
+        # un-clips the blend, and the +1.20 consistency term
+        # (a rate comparison, untolled) now shows between
+        # the two reads.
         seasons = [
             {"season": 2022, "receptions": 40,
              "receiving_yards": 440, "yds_per_reception": 11.0},
@@ -754,20 +795,22 @@ class TestTEEfficiencyBestSeason:
         ]
         blended = _te_eff(seasons)
         single = _te_eff([seasons[1]])
-        assert blended == pytest.approx(single, abs=0.01)
+        assert blended == pytest.approx(single + 1.20, abs=0.01)
 
     def test_catch_rate_prices_per_season(self):
         # Peak season: YPR scale 100, catch 50/60 -> 93.33,
         # per-season 97.50. Latest: YPR 53.85, catch 40/80 ->
         # 0, per-season 33.65. Blend 91.12, consistency
         # (latest YPR 11 vs avg 12.5) -1.20 -> 89.92.
+        # 3.14 re-pin: per-season toll as above:
+        # 91.12 x 0.9143 - 1.20 = 82.11.
         seasons = [
             {"season": 2022, "receptions": 50, "targets": 60,
              "receiving_yards": 700, "yds_per_reception": 14.0},
             {"season": 2023, "receptions": 40, "targets": 80,
              "receiving_yards": 440, "yds_per_reception": 11.0},
         ]
-        assert _te_eff(seasons) == pytest.approx(89.92, abs=0.3)
+        assert _te_eff(seasons) == pytest.approx(82.11, abs=0.3)
 
     def test_peak_evidence_rescues_a_missing_latest(self):
         # The latest season carries no rate evidence at all;
@@ -805,8 +848,10 @@ class TestTEEfficiencyBestSeason:
         ]
         raw = _te_eff(seasons)
         shrunk = _te_eff(seasons, _inseason_year=2025)
-        assert raw == pytest.approx(88.04, abs=0.4)
-        assert shrunk == pytest.approx(92.66, abs=0.4)
+        # 3.14 re-pin: both reads carry the per-season toll
+        # (raw 88.04 -> 80.27, shrunk 92.66 -> 84.49).
+        assert raw == pytest.approx(80.27, abs=0.4)
+        assert shrunk == pytest.approx(84.49, abs=0.4)
         assert shrunk > raw
 
     def test_lone_inseason_season_shrinks_toward_neutral(self):
@@ -815,15 +860,21 @@ class TestTEEfficiencyBestSeason:
              "receiving_yards": 420, "yds_per_reception": 14.0,
              "games_played": 6},
         ]
-        # 52 + 0.5 x (100 - 52) = 76.
+        # 52 + 0.5 x (100 - 52) = 76 pre-3.14; the season
+        # value now carries the toll first (100 x 0.9143),
+        # so the shrink reads 52 + 0.5 x (91.43 - 52) = 71.72.
         assert _te_eff(seasons, _inseason_year=2025) == \
-            pytest.approx(76.0, abs=0.3)
+            pytest.approx(71.72, abs=0.3)
 
     def test_wr_and_rb_reads_are_unchanged(self):
         # The best-season treatment is TE-scoped: WR still
         # prices the latest season alone (YPR 11 -> 22.73 on
         # the 8.5-19.5 scale, consistency -2.41), and RB the
-        # latest season's YPC/YPR pair.
+        # latest season's YPC/YPR pair. 3.14 re-pin: both
+        # reads now carry the per-season competition toll
+        # (conference-less fixtures, default level): the WR
+        # leg is tolled whole at the wrapper (18.57), the RB
+        # pair values are tolled per season (58.87 below).
         wr = [
             {"season": 2022, "receptions": 50,
              "receiving_yards": 900, "yds_per_reception": 18.0},
@@ -832,7 +883,7 @@ class TestTEEfficiencyBestSeason:
         ]
         assert pm.calc_efficiency_score(
             copy.deepcopy(wr), "WR") == pytest.approx(
-                22.73 - 2.41, abs=0.3)
+                18.57, abs=0.3)
         rb = [
             {"season": 2022, "rush_attempts": 200,
              "rush_yards": 1300, "yds_per_carry": 6.5,
@@ -849,9 +900,12 @@ class TestTEEfficiencyBestSeason:
         # = 68.36; the 2023 value 42.86 sits under the parity
         # floor and is unchanged), so the blend reads
         # 0.90 x 68.36 + 0.10 x 42.86 = 65.81, consistency
-        # (5.0 vs avg 5.75) -1.30 -> 64.50. The WR assertion
-        # above still guards A1's TE-only scope.
-        assert eff == pytest.approx(64.50, abs=0.4)
+        # (5.0 vs avg 5.75) -1.30 -> 64.50. 3.14 re-pin: the
+        # pair values carry the per-season toll (0.9143 at
+        # the default level), the consistency term does
+        # not: 65.81 x 0.9143 - 1.30 = 58.87. The WR
+        # assertion above still guards A1's TE-only scope.
+        assert eff == pytest.approx(58.87, abs=0.4)
 
 
 class TestQBExperienceMissingGP:
@@ -950,14 +1004,19 @@ class TestRBEfficiencyBlend:
         ]
         val, form = pm._rb_efficiency_of(seasons[1])
         assert form == "ypc"
-        assert val == pytest.approx(42.46, abs=0.3)
+        # 3.14 re-pin: the per-season read now carries the
+        # competition toll (conference-less fixture, default
+        # level): 42.46 x 0.9143 = 38.82.
+        assert val == pytest.approx(38.82, abs=0.3)
         eff = pm.calc_efficiency_score(copy.deepcopy(seasons), "RB")
         # 48.58 less the consistency drag (latest YPC 4.98 vs
-        # two-season avg 5.15 -> -0.33) and no volume shrink
-        # (48.25 < 85): the leg lands in the high 40s, off the
-        # best season's body of work - not the 33-42 crater the
-        # latest-only read produced for this shape.
-        assert eff == pytest.approx(48.25, abs=0.6)
+        # two-season avg 5.15 -> -0.33) and no volume shrink:
+        # the leg lands off the best season's body of work -
+        # not the 33-42 crater the latest-only read produced
+        # for this shape. 3.14 re-pin: the pair values carry
+        # the per-season toll, the drag does not:
+        # 48.58 x 0.9143 - 0.33 = 44.10.
+        assert eff == pytest.approx(44.10, abs=0.6)
 
     def test_latest_is_peak_blends_to_the_single_read(self):
         seasons = [_rb_season(2026, 200, 1240, rec=30, rec_yds=270)]
@@ -1450,11 +1509,14 @@ class TestPairFormParity:
         assert val == pytest.approx(86.0, abs=0.05)
 
     def test_mid_pair_print_is_untouched(self):
-        # 54.86 sits under the parity floor: byte-identical.
+        # 54.86 sits under the parity floor: parity leaves it
+        # byte-identical. 3.14 re-pin: the per-season
+        # competition toll still applies (conference-less
+        # fixture, default level): 54.86 x 0.9143 = 50.16.
         s = _rb_season(2019, 150, 840, rec=15, rec_yds=120)
         val, form = pm._rb_efficiency_of(s)
         assert form == "ypc"
-        assert val == pytest.approx(54.86, abs=0.05)
+        assert val == pytest.approx(50.16, abs=0.05)
 
     def test_composite_print_is_untouched(self):
         # A gate-passing season prices on the composite
@@ -1625,13 +1687,26 @@ class TestQBRushingPrice:
 
 
 class TestPeakExcludeByPos:
-    def test_default_empty_is_inert(self):
+    def test_shipped_default_is_inert_at_qb(self):
+        # Round 8 shipped this map empty (the QB exclusion
+        # stayed behind Kaedon's ruling); v3.14's anchored
+        # voice (cluster lab V-A') adds the TE breakout
+        # entry. The QB substance of the original pin
+        # stands: with no QB entry, the shipped default
+        # changes no QB blend.
         legs = _priced(QB_W, production=90, efficiency=80,
                        age=70, competition=100, experience=100,
                        utilization=60)
-        assert pm.BLEND_CFG["peak_exclude_by_pos"] == {}
+        assert pm.BLEND_CFG["peak_exclude_by_pos"] == {
+            "TE": ("breakout",)}
+        saved = pm.BLEND_CFG
+        pm.BLEND_CFG = {**saved, "peak_exclude_by_pos": {}}
+        try:
+            empty = pm._blend_grade(legs, "QB")
+        finally:
+            pm.BLEND_CFG = saved
         assert pm._blend_grade(legs, "QB") == pytest.approx(
-            pm._blend_grade(legs, "QB"), abs=1e-9)
+            empty, abs=1e-9)
 
     def test_excluded_leg_keeps_mean_but_leaves_peak(self):
         legs = _priced(QB_W, production=90, efficiency=80,

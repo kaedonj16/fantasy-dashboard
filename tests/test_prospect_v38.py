@@ -98,7 +98,7 @@ def _prospect(pos, seasons, age=21.0, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
 
 
 class TestPhantomSeasonDrop:
@@ -177,7 +177,11 @@ class TestNoneExits:
 
     def test_empty_seasons_keep_neutral_paths(self):
         assert pm.calc_production_score([], "WR") == 52.0
-        assert pm.calc_efficiency_score([], "WR") == 52.0
+        # 3.14 re-pin: the WR efficiency wrapper prices the
+        # toll at the latest season; with no seasons the
+        # neutral 52.0 reads at the default level
+        # (52.0 x 0.9143 = 47.55), the lab-measured form.
+        assert pm.calc_efficiency_score([], "WR") == pytest.approx(47.55, abs=0.01)
         assert pm.calc_breakout_score([], 21.0, "WR") == 52.0
         assert pm.calc_utilization_score([], "WR") == 50.0
 
@@ -197,16 +201,24 @@ class TestRatesFromCountingStats:
 
     def test_qb_efficiency_partial_evidence_renormalizes(self):
         # Attempts + yards only: YPA alone carries the leg.
+        # 3.14 re-pin: the season's value carries its
+        # competition toll (conference-less fixture, default
+        # level).
         season = {"season": 2025, "games_played": 12,
                   "pass_attempts": 200, "pass_yards": 1900}
         eff = pm.calc_efficiency_score([season], "QB")
-        assert eff == pytest.approx(pm._scale(9.5, 6.5, 9.5))
+        assert eff == pytest.approx(
+            pm._scale(9.5, 6.5, 9.5)
+            * pm._season_competition_factor(season))
 
     def test_rb_efficiency_derives_ypc(self):
+        # 3.14 re-pin: per-season toll as above.
         season = {"season": 2025, "games_played": 12,
                   "rush_attempts": 100, "rush_yards": 550}
         eff = pm.calc_efficiency_score([season], "RB")
-        assert eff == pytest.approx(pm._scale(5.5, 3.5, 7.0))
+        assert eff == pytest.approx(
+            pm._scale(5.5, 3.5, 7.0)
+            * pm._season_competition_factor(season))
 
     def test_no_rate_evidence_is_none_not_defaults(self):
         # Volume exists for production (rushing) but the WR efficiency
@@ -447,18 +459,20 @@ class TestRoleGate:
                               skip_sagarin=True)
         # The share the production leg reads is the gated one (the
         # identity this test pins). v3.9 (competition discount):
-        # score_prospect then prices the raw leg against the level
-        # it was achieved at - this Akron (MAC) fixture's competition
-        # reads ~27, so the factor 1 - 0.35 x (65 - 27) / 65 = 0.80
-        # binds visibly: 62.15 raw x 0.797 = 49.53 priced.
+        # score_prospect then priced the raw leg against the level
+        # it was achieved at. 3.14 re-pin: the toll prices per
+        # season INSIDE the leg, so the identity is now direct -
+        # the leg calc_production_score returns IS the priced
+        # leg score_prospect reports - and the toll binds
+        # visibly against the same seasons read at an SEC level
+        # (factor 1.0).
         _raw = pm.calc_production_score(gated, "RB", skip_sagarin=True)
-        _cfg = pm.COMPETITION_CFG
-        _factor = 1.0 - float(_cfg["prod_discount"]) * max(
-            0.0, (float(_cfg["discount_floor"])
-                  - r["competition_score"]) / float(_cfg["discount_floor"]))
-        assert _factor < 1.0
+        _untolled = pm.calc_production_score(
+            [dict(s, conference="SEC") for s in gated], "RB",
+            skip_sagarin=True)
+        assert _raw < _untolled
         assert r["production_score"] == pytest.approx(
-            _raw * _factor, abs=0.05)
+            _raw, abs=0.05)
 
 
 class TestPoolScreen:

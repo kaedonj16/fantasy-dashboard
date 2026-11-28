@@ -173,7 +173,7 @@ def _score(prospect, dc, **kw):
 
 class TestVersion:
     def test_model_version_is_current(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
 
 
 class TestCapitalInvariance:
@@ -221,7 +221,7 @@ class TestPayloadContract:
         assert r["projected_draft_capital_score"] is None
         assert r["capital_delta"] is None
         assert r["talent_score"] == r["prospect_score"]
-        assert r["model_version"] == "3.13"
+        assert r["model_version"] == "3.14"
 
     def test_capital_derived_payload_diagnostics_are_zero(self):
         # late_round_upside's only input was the projected round and
@@ -281,11 +281,15 @@ class TestPanelGrades:
         # step A: his utilization (73.86) was peak-resident, so
         # excluding it from the peak set reprices his peak term
         # (steps B/C1 net -0.01/0.00 on his profile - S14).
-        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 85.90
+        # v3.14 re-pin: -> 84.60 complete, 82.97 in-season
+        # under per-season discount keying (his North Texas
+        # seasons toll at the American's own level instead of
+        # his blended profile level).
+        assert _score(MESTEMAKER, _dc("QB", 8))["prospect_score"] == 84.60
         inseason = _score(MESTEMAKER, _dc("QB", 8), _active_season_year=2026)
         # Round 6 step A also prices his in-season peak set:
-        # 85.27 -> 85.13.
-        assert inseason["prospect_score"] == 85.13
+        # 85.27 -> 85.13 (3.14: 82.97, as above).
+        assert inseason["prospect_score"] == 82.97
 
     def test_green_pinned_clock(self):
         complete = _score(GREEN, _dc("TE", 35), _today=_AS_OF)

@@ -179,6 +179,30 @@ def _sportradar_get(path: str, retries: int = 3) -> Optional[Any]:
 # URL: https://github.com/nflverse/nflverse-data/releases/download/combine/combine.csv
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _nflverse_broad_jump_in(raw) -> Optional[float]:
+    """Decode an nflverse broad_jump value to inches.
+
+    The feed's column is a feet/inches concatenation, not a
+    decimal: 1002 means 10 ft 2 in (122 in), 911 means 9 ft
+    11 in. Read as a bare number it stored 78 live 2026 rows
+    at 800-1100 "inches" (a silent data bug: the stored value
+    graded as the pool's best jump ever for every carrier).
+    Decode rule: feet = v // 100, inches = v % 100, applied
+    only when the inches part is a legal inches value (<= 11)
+    and the total is in the concatenated range (>= 200);
+    anything else is already inches and passes through.
+    """
+    if raw is None:
+        return None
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if v >= 200 and (v % 100) <= 11:
+        return (v // 100) * 12 + (v % 100)
+    return v
+
+
 def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
     """
     Download the NFLVerse combine CSV and return a name-keyed dict of
@@ -248,7 +272,7 @@ def fetch_nflverse_combine(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 ath: Dict[str, Any] = {}
                 if (v := _csv_float("forty"))        is not None: ath["forty_yard"]      = v
                 if (v := _csv_float("vertical"))     is not None: ath["vertical_inches"] = v
-                if (v := _csv_float("broad_jump"))   is not None: ath["broad_jump_in"]   = v
+                if (v := _csv_float("broad_jump"))   is not None: ath["broad_jump_in"]   = _nflverse_broad_jump_in(v)
                 if (v := _csv_int("bench"))          is not None: ath["bench_reps"]      = v
                 if (v := _csv_float("cone"))         is not None: ath["three_cone"]      = v
                 if (v := _csv_float("shuttle"))      is not None: ath["short_shuttle"]   = v

@@ -356,13 +356,19 @@ class TestCompetitionDiscount:
         # factor ~0.90 on production/efficiency, and the grade
         # follows the legs down by ~5 points (76.5 -> 71.6 measured
         # on his full stored profile).
+        # 3.14 re-pin: the toll prices per season, so the legs
+        # no longer equal off x the single profile factor (his
+        # UAC season tolls deeper than his MW seasons, and the
+        # legs' additive parts are untolled): production
+        # 93.92 -> 85.87, efficiency 78.83 -> 72.08, grade
+        # 76.24 -> 71.98 (drop 4.26).
         assert off["prospect_score"] - on["prospect_score"] >= 4.0
         f = self._factor(on["competition_score"])
         assert f < 1.0
         assert on["production_score"] == pytest.approx(
-            off["production_score"] * f, abs=0.6)
+            85.87, abs=0.6)
         assert on["efficiency_score"] == pytest.approx(
-            off["efficiency_score"] * f, abs=0.6)
+            72.08, abs=0.6)
         # Utilization is a share: exempt, byte-identical.
         assert on["utilization_score"] == pytest.approx(
             off["utilization_score"], abs=0.01)
@@ -390,4 +396,4 @@ class TestCompetitionDiscount:
 
 class TestVersion:
     def test_model_version_is_39(self):
-        assert pm.MODEL_VERSION == "3.13"
+        assert pm.MODEL_VERSION == "3.14"
