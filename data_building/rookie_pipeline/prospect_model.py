@@ -6011,6 +6011,8 @@ def score_prospect(
         production_score, utilization_score, efficiency_score, age_score,
         breakout_score, athleticism_score, competition_score,
         environment_score, durability_score,
+        loaded_adj=loaded_roster_adjustment,
+        depth_adj=depth_chart_adjustment,
     )
 
     return {
@@ -6068,63 +6070,168 @@ def score_prospect(
 def _build_reasons(
     prospect, pos, seasons,
     prod, util, eff, age_sc, break_sc, ath_sc, comp_sc,
-    env_sc, dur_sc
+    env_sc, dur_sc, loaded_adj=None, depth_adj=None
 ) -> str:
-    """Build a bullet-point string summarising the prospect's strengths/flags."""
-    bullets: List[str] = []
+    """Build the scouting-notes bullet string (key_reasons), v2.
+
+    Notes-only: this text never feeds any score. v2 changes (2026-11-27):
+
+    - Candidates are collected with a distinctiveness priority (how far
+      the underlying leg score or raw metric sits from the neutral band),
+      then ordered strengths first by priority, context next, flags last,
+      and the stored list is capped at 7 - so the modal's top 5 are the
+      five most distinctive notes, not the first five in leg order.
+    - Every leg note carries a real number (the leg score and/or the raw
+      per-game stat behind it). The no-number competition filler is gone:
+      competition only fires at the extremes and names the conference.
+    - slot_rate / inline_rate are PERCENT values (0-100) in the season
+      data; the old fraction thresholds (>= 0.65 / <= 0.20) labelled
+      nearly every WR a "primary slot receiver" and every TE a
+      "traditional in-line TE". Thresholds are percent now and both ends
+      are labelled honestly (low slot = outside receiver, low inline =
+      move TE).
+    - The QB aDOT bullet is removed: the stored QB aDOT field is not a
+      real depth-of-target (live values include negatives, e.g. -5.5),
+      so no note is built from it until the field is verified upstream.
+    - Quality over raw production (Kaedon, 2026-11-27): when production
+      is low but the model already carries a circumstance signal (a
+      crowded-room credit in loaded_adj / depth_adj, a shared depth
+      chart, a short latest season, or elite efficiency / athleticism
+      legs), the production note states that context instead of the bare
+      "limited production" slam.
+    - New position notes from verified season fields: RB receiving
+      usage (receptions / receiving_yards) and QB rushing contribution
+      (rush_yards / rush_attempts / rush_tds), both present in the
+      pipeline's normalised season dicts.
+    """
+    strengths: List = []   # (priority, seq, text)
+    context: List = []
+    flags: List = []
+    _seq = [0]
+
+    def _add(bucket, priority, text):
+        _seq[0] += 1
+        bucket.append((float(priority), _seq[0], text))
+
     ls    = _latest_season(seasons) or {}
     age   = prospect.get("age")
     gp    = max(_safe(ls.get("games_played"), 12), 1)
+    raw_gp = ls.get("games_played")
+
+    def _stat_line():
+        if pos in ("WR", "TE"):
+            return f"{_safe(ls.get('receiving_yards')) / gp:.0f} receiving yards/game"
+        if pos == "RB":
+            tot = _safe(ls.get("rush_yards")) + _safe(ls.get("receiving_yards"))
+            return f"{tot / gp:.0f} scrimmage yards/game"
+        if pos == "QB":
+            return f"{_safe(ls.get('pass_yards')) / gp:.0f} passing yards/game"
+        return ""
+
+    # ── Circumstance signals for suppressed production ───────────────────
+    depth_rank = ls.get("depth_rank")
+    group_size = ls.get("position_group_size")
+    crowded = (
+        (loaded_adj is not None and loaded_adj > 1.02)
+        or (depth_adj is not None and depth_adj > 1.02)
+        or (depth_rank is not None and group_size is not None
+            and _safe(group_size) >= 3 and _safe(depth_rank) >= 2)
+    )
+    short_season = raw_gp is not None and _safe(raw_gp) < 10
+    elite_elsewhere = (
+        (eff is not None and eff >= 75) or (ath_sc is not None and ath_sc >= 75)
+    )
 
     # ── Production ────────────────────────────────────────────────────────────
     # v3.8: a missing leg (None) earns no bullet - never describe
     # unmeasured production as limited production.
     if prod is not None:
+        stat = _stat_line()
+        stat_txt = f": {stat}" if stat else ""
         if prod >= 75:
-            bullets.append("Elite production profile - dominant volume for their position")
+            _add(strengths, 78 + (prod - 75) * 0.5,
+                 f"Elite production (production score {prod:.0f}){stat_txt}")
         elif prod >= 55:
-            bullets.append("Solid production numbers with room to grow at the NFL level")
+            _add(strengths, 45 + (prod - 55) * 0.5,
+                 f"Solid production (production score {prod:.0f}){stat_txt}")
+        elif crowded or short_season or elite_elsewhere:
+            why = []
+            if crowded:
+                if depth_rank is not None and group_size is not None \
+                        and _safe(group_size) >= 3:
+                    why.append(
+                        f"a split role in a {int(_safe(group_size))}-man "
+                        f"{pos} room (No. {int(_safe(depth_rank))} on the "
+                        f"depth chart)")
+                else:
+                    why.append("a crowded room the grade already credits")
+            if short_season:
+                why.append(f"a latest season cut to {int(_safe(raw_gp))} games")
+            if elite_elsewhere and not why:
+                why.append("efficiency and traits that carry the grade "
+                           "past the raw totals")
+            _add(context, 62,
+                 f"Raw totals understate the profile (production score "
+                 f"{prod:.0f}{stat_txt}) - " + "; ".join(why))
         else:
-            bullets.append("Limited production volume - may need time to develop")
+            _add(flags, 40,
+                 f"Limited production volume (production score {prod:.0f})"
+                 f"{stat_txt} - may need time to develop")
 
     # ── Utilization ───────────────────────────────────────────────────────────
     if pos in ("WR", "TE"):
         tpg = (_safe(ls.get("targets")) or _safe(ls.get("receptions"))) / gp
         if util is not None and util >= 70:
-            bullets.append(f"High target share ({tpg:.1f} tgts/game) - clear featured receiver")
-        elif util is not None and util <= 35 and seasons:
-            bullets.append(f"Limited target volume ({tpg:.1f} tgts/game) - role player or committee")
+            _add(strengths, 60,
+                 f"Featured role: {tpg:.1f} targets/game, a clear "
+                 f"first read in the offense")
+        elif util is not None and util <= 35 and seasons and not crowded:
+            _add(flags, 30,
+                 f"Limited target volume ({tpg:.1f} targets/game) - "
+                 f"role player or committee share")
     elif pos == "RB":
         carries = _safe(ls.get("rush_attempts")) / gp
         if util is not None and util >= 70:
-            bullets.append(f"Workhorse RB usage ({carries:.1f} carries/game)")
-        elif util is not None and util <= 35:
-            bullets.append(f"Limited rush volume ({carries:.1f} carries/game) - situational role")
+            _add(strengths, 60,
+                 f"Workhorse RB usage ({carries:.1f} carries/game)")
+        elif util is not None and util <= 35 and not crowded:
+            _add(flags, 30,
+                 f"Limited rush volume ({carries:.1f} carries/game) - "
+                 f"situational role")
     elif pos == "QB":
         att_pg = _safe(ls.get("pass_attempts")) / gp
         if util is not None and util >= 70:
-            bullets.append(f"High-volume passing attack ({att_pg:.0f} att/game)")
+            _add(strengths, 50,
+                 f"High-volume passing attack ({att_pg:.0f} att/game)")
 
     # ── Efficiency ────────────────────────────────────────────────────────────
     if eff is not None:
         if eff >= 75:
-            bullets.append("High efficiency metrics stand out")
+            _add(strengths, 66 + (eff - 75) * 0.6,
+                 f"High efficiency (efficiency score {eff:.0f}) - the "
+                 f"per-touch quality backs up the volume")
         elif eff <= 35:
-            bullets.append("Below-average efficiency - volume stats may overstate true impact")
+            _add(flags, 48,
+                 f"Below-average efficiency (efficiency score {eff:.0f}) "
+                 f"- volume stats may overstate true impact")
 
     # ── Advanced metrics ──────────────────────────────────────────────────────
     if pos in ("WR", "TE"):
-        adv: List[str] = []
-
         ccr = ls.get("contested_catch_rate")
         if ccr is not None:
             pct = float(ccr)
             if pct >= 80:
-                adv.append(f"{pct:.0f}% contested catch rate - elite ball-winner in traffic")
+                _add(strengths, 92,
+                     f"{pct:.0f}% contested catch rate - elite ball-winner "
+                     f"in traffic")
             elif pct >= 65:
-                adv.append(f"{pct:.0f}% contested catch rate - reliable in contested situations")
+                _add(strengths, 74,
+                     f"{pct:.0f}% contested catch rate - reliable in "
+                     f"contested situations")
             elif pct < 40:
-                adv.append(f"{pct:.0f}% contested catch rate - struggles in jump-ball situations")
+                _add(flags, 55,
+                     f"{pct:.0f}% contested catch rate - struggles in "
+                     f"jump-ball situations")
 
         # drop_rate bullets removed: was PFF-only, no free replacement.
 
@@ -6134,39 +6241,51 @@ def _build_reasons(
             thresh     = 5.5 if pos == "WR" else 4.0
             low_thresh = 2.5 if pos == "WR" else 1.8
             if yac >= thresh:
-                adv.append(f"{yac:.1f} YAC/reception - dynamic after the catch")
+                _add(strengths, 68,
+                     f"{yac:.1f} YAC/reception - dynamic after the catch")
             elif yac <= low_thresh:
-                adv.append(f"{yac:.1f} YAC/reception - limited after-catch production")
+                _add(flags, 35,
+                     f"{yac:.1f} YAC/reception - limited after-catch "
+                     f"production")
 
         adot = ls.get("avg_depth_of_target")
         if adot is not None and pos == "WR":
             adot = float(adot)
             if adot >= 14.0:
-                adv.append(f"{adot:.1f}-yd avg depth of target - true deep threat")
+                _add(strengths, 76,
+                     f"{adot:.1f}-yd avg depth of target - true deep threat")
             elif adot <= 6.0:
-                adv.append(f"{adot:.1f}-yd aDOT - short-area route specialist")
+                _add(context, 40,
+                     f"{adot:.1f}-yd aDOT - short-area route specialist")
 
         # grades_offense bullets removed: was PFF-only, no free replacement.
 
+        # slot_rate / inline_rate are stored in PERCENT (0-100).
         if pos == "WR":
             sr = ls.get("slot_rate")
-            if sr is not None and float(sr) >= 0.65:
-                adv.append(f"{float(sr):.0f}% slot rate - primary slot receiver")
+            if sr is not None:
+                sr = float(sr)
+                if sr >= 65:
+                    _add(context, 55,
+                         f"{sr:.0f}% slot rate - primary slot receiver")
+                elif sr <= 25:
+                    _add(context, 58,
+                         f"Outside receiver: only {sr:.0f}% slot rate, "
+                         f"wins on the perimeter")
 
         if pos == "TE":
             ir = ls.get("inline_rate")
             if ir is not None:
                 ir = float(ir)
-                if ir >= 0.60:
-                    adv.append(f"{ir:.0f}% inline rate - traditional in-line TE")
-                elif ir <= 0.20:
-                    adv.append(f"{ir:.0f}% inline rate - move TE / receives in space")
-
-        bullets.extend(adv[:3])
+                if ir >= 60:
+                    _add(context, 50,
+                         f"{ir:.0f}% inline rate - traditional in-line TE")
+                elif ir <= 35:
+                    _add(context, 62,
+                         f"Move TE usage: only {ir:.0f}% inline, deployed "
+                         f"in space as a receiver")
 
     elif pos == "RB":
-        adv = []
-
         # grades_offense bullets removed: was PFF-only, no free replacement.
         # elusive_rating bullets removed: was PFF-only, no free replacement.
 
@@ -6174,43 +6293,68 @@ def _build_reasons(
         if bp is not None:
             bpct = float(bp)
             if bpct >= 18.0:
-                adv.append(f"{bpct:.0f}% breakaway run rate - consistent big-play threat")
+                _add(strengths, 90,
+                     f"{bpct:.0f}% breakaway run rate - consistent "
+                     f"big-play threat")
             elif bpct >= 12.0:
-                adv.append(f"{bpct:.0f}% breakaway run rate - shows explosive burst")
+                _add(strengths, 70,
+                     f"{bpct:.0f}% breakaway run rate - shows "
+                     f"explosive burst")
 
-        bullets.extend(adv[:3])
+        # Receiving usage: receptions / receiving_yards are real season
+        # fields for RBs in the pipeline.
+        rec = _safe(ls.get("receptions"))
+        rec_yds = _safe(ls.get("receiving_yards"))
+        scrimmage = _safe(ls.get("rush_yards")) + rec_yds
+        if rec >= 15 and scrimmage > 0:
+            share = rec_yds / scrimmage
+            if rec >= 25 or share >= 0.18:
+                _add(strengths, min(80, 52 + share * 60),
+                     f"Real receiving role: {rec:.0f} catches for "
+                     f"{rec_yds:.0f} yards ({share:.0%} of scrimmage yards)")
 
     elif pos == "QB":
-        adv = []
-
         # pff_passing_grade is now sourced from CFBD PPA; reword bullet accordingly.
         pff_pass = ls.get("pff_passing_grade")
         if pff_pass is not None:
             pff_pass = float(pff_pass)
             if pff_pass >= 85.0:
-                adv.append(f"Passing efficiency grade {pff_pass:.1f} - elite passer grade")
+                _add(strengths, 80,
+                     f"Passing efficiency grade {pff_pass:.1f} - elite "
+                     f"passer grade")
             elif pff_pass >= 75.0:
-                adv.append(f"Passing efficiency grade {pff_pass:.1f} - above-average")
+                _add(strengths, 58,
+                     f"Passing efficiency grade {pff_pass:.1f} - "
+                     f"above-average")
 
         # adjusted_completion_rate bullets removed: was PFF-only, no free replacement.
         # big_time_throw_rate bullets removed: was PFF-only, no free replacement.
+        # QB aDOT bullet removed in v2: the stored field is not a real
+        # depth of target for QBs (live values include negatives).
 
-        adot = ls.get("avg_depth_of_target")
-        if adot is not None:
-            adot = float(adot)
-            if adot >= 10.0:
-                adv.append(f"{adot:.1f}-yd avg depth of target - attacks full field vertically")
-            elif adot <= 6.0:
-                adv.append(f"{adot:.1f}-yd aDOT - relies heavily on short/underneath game")
-
-        bullets.extend(adv[:3])
+        # Rushing contribution: rush_yards / rush_tds are real season
+        # fields for QBs in the pipeline.
+        rush_yds = _safe(ls.get("rush_yards"))
+        rush_tds = _safe(ls.get("rush_tds"))
+        if rush_yds >= 200:
+            td_txt = f" and {rush_tds:.0f} rushing TDs" if rush_tds >= 4 else ""
+            _add(strengths, 72 if rush_yds >= 350 else 48,
+                 f"Adds real rushing value: {rush_yds:.0f} rush yards "
+                 f"({rush_yds / gp:.0f}/game){td_txt}")
 
     # ── Dominator rating ──────────────────────────────────────────────────────
     dom = _safe(ls.get("dominator_rating"))
     if dom >= 0.35 and pos in ("WR", "RB"):
-        bullets.append(f"Team dominator rating {dom:.0%} - commanded an outsized share of team production")
+        _add(strengths, 86,
+             f"Team dominator rating {dom:.0%} - commanded an outsized "
+             f"share of team production")
+    elif dom >= 0.28 and pos in ("WR", "RB"):
+        _add(strengths, 64,
+             f"Strong team dominator rating {dom:.0%} - a large share "
+             f"of the offense ran through him")
     elif dom >= 0.20 and pos == "TE":
-        bullets.append(f"Strong target share for a TE - {dom:.0%} team dominator")
+        _add(strengths, 70,
+             f"Strong target share for a TE - {dom:.0%} team dominator")
 
     # ── Red zone proxy ────────────────────────────────────────────────────────
     if pos in ("WR", "TE"):
@@ -6219,75 +6363,122 @@ def _build_reasons(
         if total_yds >= 200:
             rz_rate = total_tds / total_yds * 100
             if rz_rate >= 7.0:
-                bullets.append(f"High TD rate ({rz_rate:.1f} TDs/100 yds) - dangerous in red zone")
+                _add(strengths, 60,
+                     f"High TD rate ({rz_rate:.1f} TDs/100 yds) - "
+                     f"dangerous in red zone")
     elif pos == "RB":
         total_yds = _safe(ls.get("rush_yards")) + _safe(ls.get("receiving_yards"))
         total_tds = _safe(ls.get("rush_tds"))   + _safe(ls.get("receiving_tds"))
         if total_yds >= 300:
             rz_rate = total_tds / total_yds * 100
             if rz_rate >= 5.5:
-                bullets.append(f"High TD rate ({rz_rate:.1f} TDs/100 yds) - goal-line threat")
+                _add(strengths, 60,
+                     f"High TD rate ({rz_rate:.1f} TDs/100 yds) - "
+                     f"goal-line threat")
 
     # ── Age / adjusted breakout age ───────────────────────────────────────────
-    if age_sc >= 80:
-        bullets.append(f"Exceptional age-adjusted production - elite output very young ({age:.1f} yrs)")
-    elif age_sc < 40 and age is not None:
-        bullets.append(f"Age concern: {age:.1f} yrs is older than typical for this position")
+    if age_sc is not None and age_sc >= 80:
+        age_txt = f" ({age:.1f} yrs)" if age is not None else ""
+        _add(strengths, 76,
+             f"Exceptional age-adjusted production - elite output very "
+             f"young{age_txt}")
+    elif age_sc is not None and age_sc < 40 and age is not None:
+        _add(flags, 44,
+             f"Age concern: {age:.1f} yrs is older than typical for "
+             f"this position")
 
     if break_sc is not None and break_sc >= 75:
-        bullets.append("Clear breakout trajectory - early-career dominance at a young age")
+        _add(strengths, 72,
+             f"Clear breakout trajectory (breakout score {break_sc:.0f}) "
+             f"- early-career dominance at a young age")
     elif break_sc is not None and break_sc >= 60:
-        bullets.append("Solid breakout profile - consistent improvement season-over-season")
+        _add(strengths, 48,
+             f"Solid breakout profile (breakout score {break_sc:.0f}) - "
+             f"consistent improvement season-over-season")
 
     # ── Athleticism ───────────────────────────────────────────────────────────
     ath      = prospect.get("athleticism", {}) or {}
     ras      = ath.get("ras_score")
     forty    = ath.get("forty_yard")
     tc       = ath.get("three_cone")
-    shuttle  = ath.get("short_shuttle")
     ath_msgs = []
+    ath_prio = 80
     if ras is not None and _safe(ras) >= 9.0:
         ath_msgs.append(f"RAS {_safe(ras):.1f}/10")
+        ath_prio = 94 if _safe(ras) >= 9.5 else 86
     if forty is not None and _safe(forty) <= 4.35 and pos in ("WR", "RB"):
         ath_msgs.append(f"{_safe(forty):.2f}s 40-yd")
     if tc is not None and _safe(tc) <= 6.55 and pos in ("WR", "RB"):
         ath_msgs.append(f"{_safe(tc):.2f}s 3-cone (elite agility)")
     if ath_msgs:
-        bullets.append(f"Elite athleticism: {', '.join(ath_msgs)}")
+        _add(strengths, ath_prio,
+             f"Elite athleticism: {', '.join(ath_msgs)}")
     elif ath_sc is not None and ath_sc <= 35 and ath:
-        bullets.append("Below-average athleticism profile - will need to win on scheme/technique")
+        _add(flags, 45,
+             "Below-average athleticism profile - will need to win on "
+             "scheme/technique")
 
-    # ── Competition ───────────────────────────────────────────────────────────
+    # ── Competition (extremes only, with the score and conference) ───────────
     conf = ls.get("conference", "")
+    conf_txt = f", {conf}" if conf else ""
     if comp_sc is not None and comp_sc >= 70:
-        bullets.append(f"Production came against quality competition")
+        _add(strengths, 42,
+             f"That production came against top competition "
+             f"(competition score {comp_sc:.0f}{conf_txt})")
     elif comp_sc is not None and comp_sc <= 40:
-        bullets.append(f"Played at lower competition level ({conf}) - discount applied")
+        _add(flags, 50,
+             f"Lower competition level (competition score "
+             f"{comp_sc:.0f}{conf_txt}) - a discount is already in "
+             f"the grade")
 
     # ── Transfer history ──────────────────────────────────────────────────────
     if prospect.get("transfer_history"):
         th = prospect["transfer_history"]
         if isinstance(th, list) and len(th) >= 1:
-            bullets.append(f"Transfer: {' → '.join(th)} - context matters for production evaluation")
+            _add(context, 30,
+                 f"Transfer: {' → '.join(th)} - context matters for "
+                 f"production evaluation")
         elif isinstance(th, str):
-            bullets.append(f"Transfer history: {th}")
+            _add(context, 30, f"Transfer history: {th}")
 
     # v3.7: no Draft capital bullet - reasons describe talent evidence
-    # only, like the grade itself.
+    # only, like the grade itself. (The projected pick the API payload
+    # carries is appended at the display layer in rookie_api, never
+    # stored in key_reasons, and the modal filters it from these notes.)
 
     # ── Durability ────────────────────────────────────────────────────────────
     if dur_sc is not None and dur_sc <= 40:
         recent_gp = _safe(ls.get("games_played"))
         if recent_gp and recent_gp < 10:
-            bullets.append(f"Durability concern: only {int(recent_gp)} games in most recent season")
+            _add(flags, 58,
+                 f"Durability concern: only {int(recent_gp)} games in "
+                 f"most recent season")
         else:
-            bullets.append("Durability concern: missed significant games in college career")
+            _add(flags, 58,
+                 "Durability concern: missed significant games in "
+                 "college career")
 
     # ── Early declare ─────────────────────────────────────────────────────────
     if prospect.get("early_declare"):
-        bullets.append("Early declarant - chose to enter draft before exhausting eligibility")
+        _add(context, 35,
+             "Early declarant - chose to enter draft before exhausting "
+             "eligibility")
 
-    return "\n".join(f"• {b}" for b in bullets)
+    # ── Order: strengths by distinctiveness, then context, then flags ───────
+    strengths.sort(key=lambda c: (-c[0], c[1]))
+    context.sort(key=lambda c: (-c[0], c[1]))
+    flags.sort(key=lambda c: (-c[0], c[1]))
+    ordered = [t for _, _, t in strengths] + [t for _, _, t in context]
+    final = ordered[:7]
+    if flags:
+        room = 7 - len(final)
+        if room > 0:
+            final += [t for _, _, t in flags[:min(2, room)]]
+        elif flags[0][2] not in final:
+            # A real flag always surfaces, even on a stacked profile.
+            final[-1] = flags[0][2]
+    return "\n".join(f"• {b}" for b in final)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
